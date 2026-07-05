@@ -7,7 +7,7 @@ import "dotenv/config";
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const COLLECTION_NAME = "repomind";
-const VECTOR_SIZE = 768;           // Gemini text-embedding-004 output dimension
+const VECTOR_SIZE = 3072;          // Gemini gemini-embedding-2 output dimension
 const EMBED_BATCH_SIZE = 50;       // chunks per embedding API call
 
 // ─── Clients (module-level singletons) ────────────────────────────────────────
@@ -15,7 +15,7 @@ const EMBED_BATCH_SIZE = 50;       // chunks per embedding API call
 function getEmbeddingModel() {
   return new GoogleGenerativeAIEmbeddings({
     apiKey: process.env.GOOGLE_API_KEY!,
-    model: "text-embedding-004",   // 768-dim, optimal for retrieval
+    model: "gemini-embedding-2",   // 3072-dim
   });
 }
 
@@ -110,10 +110,15 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
     }));
 
     // Upsert directly via Qdrant REST client (no LangChain wrapper)
-    await qdrant.upsert(COLLECTION_NAME, {
-      wait: true,   // block until indexing is complete for reliability
-      points,
-    });
+    try {
+      await qdrant.upsert(COLLECTION_NAME, {
+        wait: true,   // block until indexing is complete for reliability
+        points,
+      });
+    } catch (err: any) {
+      console.error("[Embed] Qdrant upsert error:", err?.data || err);
+      throw err;
+    }
 
     console.log(`[Embed] Batch ${batchIdx + 1} upserted to Qdrant.`);
   }

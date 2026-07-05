@@ -3,6 +3,7 @@ import cors from "cors";
 import "dotenv/config";
 
 import ingestRouter from "./routes/ingest";
+import queryRouter from "./routes/query";
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,9 @@ app.get("/health", (_req, res) => {
 /** Ingestion pipeline trigger */
 app.use("/ingest", ingestRouter);
 
+/** Retrieval + agent Q&A */
+app.use("/query", queryRouter);
+
 // 404 fallback
 app.use((_req, res) => {
   res.status(404).json({ error: "Route not found" });
@@ -34,6 +38,7 @@ app.use((_req, res) => {
 app.listen(PORT, () => {
   console.log(`\n🚀 RepoMind API running at http://localhost:${PORT}`);
   console.log(`   POST http://localhost:${PORT}/ingest  { repoUrl: "..." }`);
+  console.log(`   POST http://localhost:${PORT}/query   { question: "..." }`);
   console.log(`   GET  http://localhost:${PORT}/health\n`);
 });
 

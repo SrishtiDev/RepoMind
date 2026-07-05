@@ -2,9 +2,7 @@
 
 **Ask questions about any GitHub repository. Get answers with source citations.**
 
-Paste a GitHub URL. Ask "How does auth work?" or "Where is rate limiting implemented?" — RepoMind's agent traces through the actual code, reasons across files, and responds with file paths and line numbers.
-
-Live at → `repomind.dev` *(coming soon)*
+Paste a GitHub URL. Ask "How does auth work?" or "Where is rate limiting implemented?" — RepoMind's agent retrieves relevant code chunks, checks if it has enough context, retrieves again if not, and answers with the file and chunk it used.
 
 ---
 
@@ -19,9 +17,9 @@ Developers need a way to *query* code the way they query databases.
 ## What RepoMind Does
 
 - Paste any public GitHub repo URL
-- RepoMind clones it, parses it with an AST-aware chunker (no mid-function cuts), and embeds it into a vector store
-- A LangGraph agent receives your question, retrieves relevant chunks, decides if it has enough context, retrieves more if needed, then answers
-- Every answer includes **file path + line number citations** — no hallucinated references
+- RepoMind clones it, chunks the code, and embeds it into a vector store (Qdrant)
+- A LangGraph agent receives your question, retrieves relevant chunks, assesses whether the context is sufficient, retrieves again with a refined query if not, then answers
+- Every answer includes **file name + chunk citations** — grounded in what was actually retrieved, not hallucinated
 
 ---
 
@@ -33,9 +31,9 @@ User Query
     ▼
 LangGraph Agent
     │
-    ├── Retrieve Node → ChromaDB vector search
+    ├── Retrieve Node → Qdrant vector search
     │       │
-    │       └── Assess: enough context? ──No──► Re-retrieve with refined query
+    │       └── Assess: enough context? ──No──► Refine query, re-retrieve (max 2 retries)
     │                       │
     │                      Yes
     │                       │
@@ -49,17 +47,20 @@ LangGraph Agent
 GitHub URL
     │
     ▼
-git clone (temp dir)
+POST /ingest → job queued (BullMQ + Redis)
     │
     ▼
-AST-aware chunker (tree-sitter)
-  - Splits at function/class boundaries
-  - Preserves import context per chunk
-  - Attaches metadata: file path, start line, end line
+Worker: git clone (simple-git, temp dir)
     │
     ▼
-OpenAI embeddings → ChromaDB
+Chunk files (~1000 chars, 200 char overlap)
+  - Attaches metadata: filename, filepath, chunkIndex
+    │
+    ▼
+Gemini embeddings → Qdrant
 ```
+
+Ingestion runs as a background job, not inline in the HTTP request — cloning and embedding a repo can take well over a request's reasonable timeout, so the API just queues the job and returns immediately.
 
 ---
 
@@ -68,32 +69,20 @@ OpenAI embeddings → ChromaDB
 | Layer | Technology |
 |---|---|
 | Agent | LangGraph.js |
-| RAG | LangChain.js + ChromaDB |
-| Code Parsing | tree-sitter (AST-aware chunking) |
+| RAG | LangChain.js |
+| Vector Store | Qdrant |
+| Job Queue | BullMQ + Redis |
 | Backend | Node.js + Express |
-| Frontend | React (Vite) |
-| Embeddings | OpenAI `text-embedding-3-small` |
-| Deployment | Railway (backend) + Vercel (frontend) |
-
----
-
-## Why AST-Aware Chunking
-
-Naive text splitters cut at token count — which means a function gets split mid-body, imports get separated from the code that uses them, and retrieval returns useless fragments.
-
-RepoMind uses tree-sitter to parse each file into its syntax tree and chunks at natural code boundaries: function declarations, class definitions, module exports. Each chunk stays semantically complete.
-
-This is the core technical decision that makes retrieval actually work on real codebases.
+| Frontend | React (Vite) + Tailwind |
+| Embeddings + LLM | Google Gemini |
 
 ---
 
 ## Why LangGraph (not a simple chain)
 
-A single retrieve → answer chain fails when the question requires multi-file context.
+A single retrieve → answer chain fails when the first retrieval pass doesn't surface enough context.
 
-Example: "How does the auth middleware connect to the route handler?" — the answer lives in two files, and a single retrieval pass may only surface one.
-
-LangGraph lets the agent assess retrieved context, decide it's incomplete, reformulate the query, and retrieve again — before committing to an answer. This is a conditional graph, not a linear chain.
+RepoMind's agent assesses the retrieved chunks against the question, and if the LLM judges the context insufficient, it generates a refined query and retrieves again — up to 2 retries — before committing to an answer. This is a conditional graph with a loop, not a linear chain.
 
 ---
 
@@ -104,15 +93,19 @@ repomind/
 ├── backend/
 │   ├── src/
 │   │   ├── agent/
-│   │   │   ├── graph.ts          # LangGraph graph definition
+│   │   │   ├── graph.ts          # LangGraph StateGraph definition
+│   │   │   ├── state.ts          # Graph state type
 │   │   │   ├── nodes/
 │   │   │   │   ├── retrieve.ts   # Vector search node
-│   │   │   │   ├── assess.ts     # Context sufficiency check
-│   │   │   │   └── answer.ts     # Final answer generation
+│   │   │   │   ├── assess.ts     # Context sufficiency check + query refinement
+│   │   │   │   └── answer.ts     # Final answer generation with citations
 │   │   ├── ingestion/
-│   │   │   ├── clone.ts          # GitHub repo cloning
-│   │   │   ├── chunker.ts        # AST-aware chunker (tree-sitter)
-│   │   │   └── embed.ts          # Embedding + ChromaDB insert
+│   │   │   ├── clone.ts          # GitHub repo cloning (simple-git)
+│   │   │   ├── chunker.ts        # Chunking logic
+│   │   │   └── embed.ts          # Embedding + Qdrant insert
+│   │   ├── queue/
+│   │   │   ├── producer.ts       # Adds ingestion job to BullMQ
+│   │   │   └── worker.ts         # Processes ingestion jobs
 │   │   └── routes/
 │   │       ├── ingest.ts         # POST /ingest
 │   │       └── query.ts          # POST /query
@@ -132,55 +125,57 @@ repomind/
 
 ```bash
 # Clone
-git clone https://github.com/yourusername/repomind
-cd repomind
+git clone https://github.com/SrishtiDev/RepoMind
+cd RepoMind
+
+# Start Qdrant + Redis
+cd backend
+docker-compose up -d
 
 # Backend
-cd backend
-cp .env.example .env        # Add OPENAI_API_KEY
+cp .env.example .env        # Add GOOGLE_API_KEY
 npm install
-npm run dev                 # Runs on :3001
+npm run dev
 
 # Frontend
 cd ../frontend
 npm install
-npm run dev                 # Runs on :5173
+npm run dev
 ```
 
 **Environment variables:**
 ```
-OPENAI_API_KEY=
-CHROMA_HOST=localhost
-CHROMA_PORT=8000
-PORT=3001
+GOOGLE_API_KEY=
+QDRANT_URL=http://localhost:6333
+REDIS_HOST=localhost
+REDIS_PORT=6379
+PORT=3000
 ```
 
 ---
 
-## What's Non-Trivial Here
+## Current Limitations (being worked on)
 
-If you're reading this as a technical reviewer:
+- Chunking is character-based, not AST-aware — a function can currently be split mid-body. Moving to tree-sitter-based chunking is the next major improvement.
+- Citations reference filename + chunk index, not exact line numbers.
+- Only public repos are supported (no GitHub OAuth for private repos).
+- No persistent job status polling on the frontend yet — ingestion status isn't live-tracked.
 
-- The **AST chunker** handles 8 file types (JS, TS, Python, Java, Go, Rust, C, C++) with language-specific tree-sitter grammars
-- The **LangGraph graph** has a conditional edge: the assess node returns `"sufficient"` or `"insufficient"` — the graph loops on insufficient up to 3 times before forcing an answer
-- Repos up to **~50MB** are supported via streaming clone + chunk-on-the-fly (no full load into memory)
-- Each chunk stores **metadata**: file path, start/end line, language, parent scope name — used to generate citations, not reconstructed from the answer
+Being upfront about these because they're the honest state of the project, and they're also the most interesting things to talk about in an interview — they're deliberate engineering tradeoffs, not oversights.
 
 ---
 
 ## Roadmap
 
+- [ ] AST-aware chunking via tree-sitter (function/class-boundary chunks, line-number citations)
+- [ ] Job status polling on frontend
 - [ ] Support private repos via GitHub OAuth
 - [ ] Persistent repo index (skip re-ingestion on revisit)
 - [ ] PR diff mode — "what changed in this PR and why"
-- [ ] Multi-repo comparison
 
 ---
 
 ## Author
 
 **Srishti Rawat**
-[GitHub](https://github.com/yourusername) · [LinkedIn](https://linkedin.com/in/yourprofile)
-
-Pre-final year CS student @ ABES Engineering College, Ghaziabad.
-Building in public. Open to SDE internship opportunities (2026).
+[GitHub](https://github.com/SrishtiDev) · [X](https://x.com/srishtirwt)

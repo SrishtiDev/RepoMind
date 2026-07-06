@@ -175,6 +175,75 @@ Being upfront about these because they're the honest state of the project, and t
 
 ---
 
+## MCP Server Integration
+
+RepoMind includes an MCP (Model Context Protocol) server to allow AI agents like Claude Code, Cursor, or Zed to directly ingest and query GitHub repositories locally.
+
+### Setup
+
+```bash
+cd repomind-mcp
+npm install
+npm run build
+```
+
+### IDE Config Snippets
+
+Make sure the Express backend is running (`localhost:3000`) before the agent calls any tool.
+
+#### Claude Code (`~/.claude/mcp.json` or project-level `.mcp.json`)
+```json
+{
+  "mcpServers": {
+    "repomind": {
+      "command": "node",
+      "args": ["/home/srishti-rawat/Projects/RepoMind/repomind-mcp/dist/index.js"],
+      "env": {
+        "REPOMIND_API_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
+```
+
+#### Cursor (`~/.cursor/mcp.json`)
+```json
+{
+  "mcpServers": {
+    "repomind": {
+      "command": "node",
+      "args": ["/home/srishti-rawat/Projects/RepoMind/repomind-mcp/dist/index.js"],
+      "env": {
+        "REPOMIND_API_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
+```
+
+#### Zed (`.zed/settings.json` -> `context_servers` key)
+```json
+{
+  "context_servers": {
+    "repomind": {
+      "command": {
+        "path": "node",
+        "args": ["/home/srishti-rawat/Projects/RepoMind/repomind-mcp/dist/index.js"],
+        "env": {
+          "REPOMIND_API_URL": "http://localhost:3000"
+        }
+      }
+    }
+  }
+}
+```
+
+### Available MCP Tools
+- **`repomind_ingest`**: Ingest a public GitHub repository. Call this once before querying.
+- **`repomind_ask`**: Ask a question about an ingested repository. Returns answers with file/chunk citations.
+
+---
+
 ## Author
 
 **Srishti Rawat**

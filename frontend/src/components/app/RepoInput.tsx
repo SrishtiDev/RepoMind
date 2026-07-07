@@ -1,5 +1,6 @@
+"use client";
 import { useState, type FormEvent } from 'react';
-import { ingestRepo } from '../lib/api';
+import { ingestRepo } from '../../lib/api';
 
 type Status =
   | { kind: 'idle' }

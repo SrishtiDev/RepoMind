@@ -7,6 +7,7 @@ import { parseFile } from "../structural/parser";
 import { extractFileData, FileData } from "../structural/extractor";
 import { buildGraph } from "../structural/graphBuilder";
 import { saveGraph } from "../structural/graphStore";
+import { tagGraph } from "../semantic/batchProcessor";
 import { glob } from "glob";
 import fs from "fs/promises";
 import path from "path";
@@ -55,12 +56,16 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
         });
 
         const extractedData: FileData[] = [];
+        const fileContents = new Map<string, string>();
+
         for (const filepath of files) {
           try {
             const content = await fs.readFile(filepath, "utf-8");
+            const relPath = path.relative(cloneDir as string, filepath);
+            fileContents.set(relPath, content);
+            
             const tree = parseFile(filepath, content);
             if (tree) {
-              const relPath = path.relative(cloneDir as string, filepath);
               const data = extractFileData(relPath, tree);
               extractedData.push(data);
             }
@@ -71,7 +76,11 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
 
         if (extractedData.length > 0) {
           const graph = buildGraph(extractedData);
-          await saveGraph(repoUrl, graph);
+          
+          console.log(`[Worker] Starting semantic tagging for ${repoUrl}`);
+          const taggedGraph = await tagGraph(graph, fileContents);
+
+          await saveGraph(repoUrl, taggedGraph);
         } else {
           console.log(`[Worker] No structural data extracted for ${repoUrl}`);
         }

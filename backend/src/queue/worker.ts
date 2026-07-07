@@ -3,6 +3,13 @@ import { cloneRepo, cleanupRepo } from "../ingestion/clone";
 import { chunkRepository } from "../ingestion/chunker";
 import { embedAndStore } from "../ingestion/embed";
 import { IngestionJobData } from "./producer";
+import { parseFile } from "../structural/parser";
+import { extractFileData, FileData } from "../structural/extractor";
+import { buildGraph } from "../structural/graphBuilder";
+import { saveGraph } from "../structural/graphStore";
+import { glob } from "glob";
+import fs from "fs/promises";
+import path from "path";
 import "dotenv/config";
 
 // ─── Redis Connection ─────────────────────────────────────────────────────────
@@ -35,9 +42,48 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
     await job.updateProgress(10);
     cloneDir = await cloneRepo(repoUrl);
 
-    // Step 2: Chunk
+    // Step 2: Chunk (and parallel Structural Graph)
     await job.updateProgress(30);
-    const chunks = await chunkRepository(cloneDir, repoUrl);
+
+    const structuralTask = async () => {
+      try {
+        console.log(`[Worker] Starting structural extraction for ${repoUrl}`);
+        const files = await glob("**/*.{ts,tsx,js,jsx}", {
+          cwd: cloneDir as string,
+          ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**"],
+          absolute: true,
+        });
+
+        const extractedData: FileData[] = [];
+        for (const filepath of files) {
+          try {
+            const content = await fs.readFile(filepath, "utf-8");
+            const tree = parseFile(filepath, content);
+            if (tree) {
+              const relPath = path.relative(cloneDir as string, filepath);
+              const data = extractFileData(relPath, tree);
+              extractedData.push(data);
+            }
+          } catch (e) {
+            console.error(`[Worker] Structural extraction failed for ${filepath}`, e);
+          }
+        }
+
+        if (extractedData.length > 0) {
+          const graph = buildGraph(extractedData);
+          await saveGraph(repoUrl, graph);
+        } else {
+          console.log(`[Worker] No structural data extracted for ${repoUrl}`);
+        }
+      } catch (err) {
+        console.error(`[Worker] Overall structural analysis failed for ${repoUrl}`, err);
+      }
+    };
+
+    const [chunks] = await Promise.all([
+      chunkRepository(cloneDir, repoUrl),
+      structuralTask(),
+    ]);
 
     if (chunks.length === 0) {
       console.warn(`[Worker] No chunks produced for ${repoUrl}. Job done.`);

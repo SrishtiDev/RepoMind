@@ -1,7 +1,7 @@
-// All API calls go through this module. The base URL resolves to the Vite dev
-// proxy in development (which forwards /api → http://localhost:3000) and should
-// be set via VITE_API_BASE in production.
-const BASE = import.meta.env.VITE_API_BASE ?? '/api';
+// All API calls go through this module. The base URL resolves to the backend
+// server in development (which runs on port 3001) and should
+// be set via NEXT_PUBLIC_API_BASE in production.
+const BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
 
 // ─── Request / Response types ────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
-import RepoInput from './components/RepoInput';
-import ChatWindow from './components/ChatWindow';
+import RepoInput from '../components/RepoInput';
+import ChatWindow from '../components/ChatWindow';
 
-export default function App() {
+export default function Home() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">

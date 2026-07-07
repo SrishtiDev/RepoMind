@@ -1,4 +1,3 @@
-"use client";
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { askQuestion, type Source } from '../lib/api';
 import CitationCard from './CitationCard';

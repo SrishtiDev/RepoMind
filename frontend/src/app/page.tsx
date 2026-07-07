@@ -1,9 +1,5 @@
-import LiquidGlassHeroDemo from "../components/ui/liquid-glass-hero-demo";
+import LandingPage from "../components/landing/LandingPage";
 
 export default function Home() {
-  return (
-    <main className="min-h-screen bg-black">
-      <LiquidGlassHeroDemo />
-    </main>
-  );
+  return <LandingPage />;
 }

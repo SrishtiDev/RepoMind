@@ -7,13 +7,13 @@ const uuid_1 = require("uuid");
 require("dotenv/config");
 // ─── Config ───────────────────────────────────────────────────────────────────
 const COLLECTION_NAME = "repomind";
-const VECTOR_SIZE = 768; // Gemini text-embedding-004 output dimension
+const VECTOR_SIZE = 3072; // Gemini gemini-embedding-2 output dimension
 const EMBED_BATCH_SIZE = 50; // chunks per embedding API call
 // ─── Clients (module-level singletons) ────────────────────────────────────────
 function getEmbeddingModel() {
     return new google_genai_1.GoogleGenerativeAIEmbeddings({
         apiKey: process.env.GOOGLE_API_KEY,
-        model: "text-embedding-004", // 768-dim
+        model: "gemini-embedding-2", // 3072-dim
     });
 }
 function getQdrantClient() {

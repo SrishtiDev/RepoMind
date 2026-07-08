@@ -22,7 +22,7 @@ type Message = UserMessage | AssistantMessage;
 
 function Spinner() {
   return (
-    <div className="flex items-center gap-2 text-slate-400 text-sm">
+    <div className="flex items-center gap-2 text-gray-400 text-sm">
       <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -72,11 +72,11 @@ export default function ChatWindow() {
   }
 
   return (
-    <div className="flex flex-col rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full rounded-lg border border-white/10 bg-[#0d0d10] shadow-sm overflow-hidden">
       {/* Message list */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-72 max-h-[60vh]">
         {messages.length === 0 && (
-          <p className="text-center text-sm text-slate-400 mt-8">
+          <p className="text-center text-sm text-gray-400 mt-8">
             Ask a question about the ingested repository.
           </p>
         )}
@@ -89,7 +89,7 @@ export default function ChatWindow() {
                 className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words ${
                   msg.role === 'user'
                     ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 text-slate-800'
+                    : 'bg-[#1a1a24] text-gray-200'
                 }`}
               >
                 {msg.text}
@@ -109,7 +109,7 @@ export default function ChatWindow() {
 
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-slate-100 rounded-lg px-3 py-2">
+            <div className="bg-[#1a1a24] rounded-lg px-3 py-2">
               <Spinner />
             </div>
           </div>
@@ -126,7 +126,7 @@ export default function ChatWindow() {
       {/* Input row */}
       <form
         onSubmit={handleSubmit}
-        className="flex gap-2 border-t border-slate-200 p-3"
+        className="flex gap-2 border-t border-white/10 bg-[#0d0d10] p-3"
       >
         <input
           type="text"
@@ -134,7 +134,7 @@ export default function ChatWindow() {
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="Ask a question about this repo…"
           disabled={loading}
-          className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+          className="flex-1 rounded border border-white/10 bg-[#16161a] px-3 py-2 text-sm text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
         />
         <button
           type="submit"

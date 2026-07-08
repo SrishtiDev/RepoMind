@@ -19,6 +19,7 @@ router.get("/", async (req, res) => {
     try {
         const graph = await (0, graphStore_1.loadGraph)(repoUrl);
         if (!graph) {
+            console.log(`[Route /graph] Graph request for ${repoUrl}: no graph found in Redis`);
             res.status(404).json({ error: "Code map isn't ready yet for this repo" });
             return;
         }
@@ -46,6 +47,7 @@ router.get("/", async (req, res) => {
                 label: attrs.type
             });
         });
+        console.log(`[Route /graph] Graph request for ${repoUrl}: ${nodes.length} nodes, ${edges.length} edges`);
         res.status(200).json({ nodes, edges });
     }
     catch (err) {

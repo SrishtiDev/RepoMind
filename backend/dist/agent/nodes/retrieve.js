@@ -14,7 +14,7 @@ function getEmbedder() {
     }
     return new google_genai_1.GoogleGenerativeAIEmbeddings({
         apiKey: process.env.GOOGLE_API_KEY,
-        model: "text-embedding-004", // 768-dim — must match ingestion dimension
+        model: "gemini-embedding-2", // 3072-dim — must match ingestion dimension
     });
 }
 function getQdrantClient() {

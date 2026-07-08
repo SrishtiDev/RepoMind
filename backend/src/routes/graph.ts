@@ -22,6 +22,7 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
     const graph = await loadGraph(repoUrl);
     
     if (!graph) {
+      console.log(`[Route /graph] Graph request for ${repoUrl}: no graph found in Redis`);
       res.status(404).json({ error: "Code map isn't ready yet for this repo" });
       return;
     }
@@ -53,6 +54,7 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
       });
     });
 
+    console.log(`[Route /graph] Graph request for ${repoUrl}: ${nodes.length} nodes, ${edges.length} edges`);
     res.status(200).json({ nodes, edges });
   } catch (err: any) {
     console.error("[Route /graph] Failed to load graph:", err);

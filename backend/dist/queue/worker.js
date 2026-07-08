@@ -71,6 +71,7 @@ async function processIngestionJob(job) {
                     const graph = (0, graphBuilder_1.buildGraph)(extractedData);
                     console.log(`[Worker] Starting semantic tagging for ${repoUrl}`);
                     const taggedGraph = await (0, batchProcessor_1.tagGraph)(graph, fileContents);
+                    console.log(`[Worker] Structural layer complete. Graph for ${repoUrl}: ${taggedGraph.order} nodes, ${taggedGraph.size} edges.`);
                     await (0, graphStore_1.saveGraph)(repoUrl, taggedGraph);
                 }
                 else {

@@ -6,7 +6,7 @@ import { IngestionJobData } from "./producer";
 import { parseFile } from "../structural/parser";
 import { extractFileData, FileData } from "../structural/extractor";
 import { buildGraph } from "../structural/graphBuilder";
-import { saveGraph } from "../structural/graphStore";
+import { saveGraph, loadGraph } from "../structural/graphStore";
 import { tagGraph } from "../semantic/batchProcessor";
 import { glob } from "glob";
 import fs from "fs/promises";
@@ -43,10 +43,28 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
     await job.updateProgress(10);
     cloneDir = await cloneRepo(repoUrl);
 
-    // Step 2: Chunk (and parallel Structural Graph)
+    // Step 2: Chunk (and conditional Structural Graph)
     await job.updateProgress(30);
 
     const structuralTask = async () => {
+      // ── Idempotency guard ─────────────────────────────────────────────────
+      // Before running the expensive structural+semantic pipeline (which consumes
+      // Gemini API quota for tagging), check if a graph was already saved in Redis
+      // for this repo from a previous run. If so, skip re-processing entirely.
+      //
+      // This is a deliberate MVP-level guard: if the job previously failed at the
+      // embedding step (after graph tagging succeeded), re-submitting via /ingest
+      // will re-clone the repo and skip straight to embedding rather than wasting
+      // another 5 min of rate-limited Gemini tagging calls.
+      //
+      // Not a permanent caching strategy — a future version should version graphs
+      // by commit SHA or have an explicit invalidation endpoint.
+      const existingGraph = await loadGraph(repoUrl);
+      if (existingGraph) {
+        console.log(`[Worker] Graph already exists for ${repoUrl} — skipping structural/semantic re-processing.`);
+        return;
+      }
+
       try {
         console.log(`[Worker] Starting structural extraction for ${repoUrl}`);
         const files = await glob("**/*.{ts,tsx,js,jsx}", {
@@ -80,6 +98,7 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
           console.log(`[Worker] Starting semantic tagging for ${repoUrl}`);
           const taggedGraph = await tagGraph(graph, fileContents);
 
+          console.log(`[Worker] Structural layer complete. Graph for ${repoUrl}: ${taggedGraph.order} nodes, ${taggedGraph.size} edges.`);
           await saveGraph(repoUrl, taggedGraph);
         } else {
           console.log(`[Worker] No structural data extracted for ${repoUrl}`);

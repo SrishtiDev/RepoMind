@@ -8,7 +8,7 @@ type Status =
   | { kind: 'success'; jobId: string }
   | { kind: 'error'; message: string };
 
-export default function RepoInput() {
+export default function RepoInput({ onIngestStart }: { onIngestStart?: (url: string) => void }) {
   const [url, setUrl] = useState('');
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
 
@@ -18,6 +18,10 @@ export default function RepoInput() {
     if (!trimmed) return;
 
     setStatus({ kind: 'loading' });
+    if (onIngestStart) {
+      onIngestStart(trimmed);
+    }
+    
     try {
       const res = await ingestRepo(trimmed);
       setStatus({ kind: 'success', jobId: res.jobId });
@@ -30,8 +34,8 @@ export default function RepoInput() {
   const isLoading = status.kind === 'loading';
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold text-slate-700 uppercase tracking-wide">
+    <div className="rounded-lg border border-white/10 bg-[#0d0d10] p-4 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold text-white uppercase tracking-wide">
         Ingest Repository
       </h2>
 
@@ -42,7 +46,7 @@ export default function RepoInput() {
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://github.com/owner/repo"
           disabled={isLoading}
-          className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+          className="flex-1 rounded border border-white/10 bg-[#16161a] px-3 py-2 text-sm text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
         />
         <button
           type="submit"

@@ -7,6 +7,7 @@
 
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { TAXONOMY, VALID_TAGS } from "./taxonomy";
+import { geminiRateLimiter } from "../lib/rateLimiter";
 
 export interface NodeSummary {
   nodeId: string;
@@ -61,9 +62,20 @@ ${taxonomyText}
 Nodes to classify:
 ${nodesText}`;
 
+  let rawContent: any;
   try {
-    const response = await model.invoke(prompt);
-    let content = response.content as string;
+    const response = await geminiRateLimiter.schedule(() => model.invoke(prompt));
+    rawContent = response.content;
+    
+    let content = typeof rawContent === "string" ? rawContent : 
+                  (rawContent && typeof rawContent === "object" && "text" in rawContent) ? String((rawContent as any).text) : 
+                  String(rawContent);
+
+    // Extract the JSON array from the first '[' to the last ']'
+    const match = content.match(/\[[\s\S]*\]/);
+    if (match) {
+      content = match[0];
+    }
 
     // Defensively strip markdown fences if present
     content = content.trim();
@@ -97,6 +109,9 @@ ${nodesText}`;
     return validResults;
   } catch (err) {
     console.error(`[Semantic Classifier] Failed to classify batch of ${nodes.length} nodes:`, err);
+    if (rawContent !== undefined) {
+      console.error(`[Semantic Classifier] Raw response (truncated):`, String(rawContent).substring(0, 200));
+    }
     // Return empty results rather than crashing the whole job
     return [];
   }

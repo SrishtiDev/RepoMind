@@ -30,6 +30,7 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
 
     fetchGraph(repoUrl)
       .then((data) => {
+        console.log(`[CodeMapTab] Raw fetched graph for ${repoUrl}:`, data);
         setGraphData(data);
       })
       .catch((err) => {
@@ -86,7 +87,18 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
         </div>
       )}
 
-      {graphData && !loading && !error && (
+      {graphData && !loading && !error && graphData.nodes.length === 0 && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center px-6">
+          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4 border border-white/10">
+            <span className="text-2xl">🕳️</span>
+          </div>
+          <p className="text-gray-400 font-medium text-lg mb-2">
+            No graph data found for this repo yet — structural analysis may still be processing or failed during ingestion
+          </p>
+        </div>
+      )}
+
+      {graphData && !loading && !error && graphData.nodes.length > 0 && (
         <>
           {/* Header Controls (Layer Toggle & Tour Start) */}
           <div className="absolute top-4 left-4 z-20 flex gap-4">

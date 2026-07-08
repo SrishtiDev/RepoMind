@@ -31,16 +31,20 @@ export interface IngestionJobData {
 /**
  * Adds an ingestion job to the BullMQ queue.
  * The worker will pick it up and run clone → chunk → embed.
+ *
+ * NOTE: attempts is intentionally set to 1 (no automatic retry).
+ * BullMQ retries currently re-run the ENTIRE pipeline (re-clone, re-parse,
+ * re-tag, re-embed) rather than resuming from the failure point. On the
+ * Gemini free tier (5 RPM), a failed rate-limited run followed immediately by
+ * a full retry doubles the API usage and guarantees another 429. The worker
+ * instead implements idempotency at each stage so individual steps can be
+ * re-triggered safely via a fresh /ingest call.
  */
 export async function addIngestionJob(data: IngestionJobData): Promise<string> {
   const queue = getQueue();
   const job = await queue.add("ingest-repo", data, {
-    attempts: 3,
-    backoff: {
-      type: "exponential",
-      delay: 5000,
-    },
-    removeOnComplete: 100,  // keep last 100 completed jobs
+    attempts: 1,              // No automatic retry — see comment above
+    removeOnComplete: 100,    // Keep last 100 completed jobs
     removeOnFail: 50,
   });
 

@@ -2,6 +2,7 @@ import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { v4 as uuidv4 } from "uuid";
 import { CodeChunk } from "./chunker";
+import { geminiRateLimiter } from "../lib/rateLimiter";
 import "dotenv/config";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -93,8 +94,13 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
       `[Embed] Batch ${batchIdx + 1}/${batches.length} — embedding ${batch.length} chunks...`
     );
 
-    // Generate embeddings via Google Gemini
-    const vectors = await embedder.embedDocuments(texts);
+    // Generate embeddings via Google Gemini, wrapped in rate limiter
+    let vectors;
+    try {
+      vectors = await geminiRateLimiter.schedule(() => embedder.embedDocuments(texts));
+    } catch (err: any) {
+      throw new Error(`Embedding API call failed: ${err?.message || err}`);
+    }
 
     // Guard: ensure no empty embeddings
     for (let i = 0; i < vectors.length; i++) {

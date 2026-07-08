@@ -29,10 +29,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 # Set environment defaults
-ENV PORT=3001
+ENV PORT=3000
 ENV NODE_ENV=production
 
-EXPOSE 3001
+EXPOSE 3000
 
 # The start command is overridden by Render depending on the service type
 # Web Service: npm start

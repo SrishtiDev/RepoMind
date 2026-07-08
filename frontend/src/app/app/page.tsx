@@ -20,7 +20,7 @@ export default function AppPage() {
           </header>
 
           <div className="shrink-0">
-            <RepoInput onIngestStart={(url) => setActiveRepoUrl(url)} />
+            <RepoInput onIngestStart={(url: string) => setActiveRepoUrl(url)} />
           </div>
           
           <div className="flex-1 min-h-[400px]">

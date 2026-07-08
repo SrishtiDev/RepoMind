@@ -5,6 +5,9 @@ export const MAX_RETRY_COUNT = 2;
 
 // ─── Domain Types ─────────────────────────────────────────────────────────────
 
+import { GraphContextNode } from "./nodes/graphRetrieve";
+import { MergedContext } from "./nodes/mergeContext";
+
 /** A retrieved code chunk with its source provenance. */
 export interface Chunk {
   content: string;
@@ -36,8 +39,12 @@ export interface Source {
  */
 export interface AgentState {
   question: string;
+  repoUrl?: string;
   refinedQuery?: string;
   retrievedChunks: Chunk[];
+  matchedTags?: string[];
+  graphContext?: GraphContextNode[];
+  mergedContext?: MergedContext[];
   isSufficient: boolean;
   retryCount: number;
   answer?: string;

@@ -62,3 +62,19 @@ export function ingestRepo(repoUrl: string): Promise<IngestResponse> {
 export function askQuestion(question: string): Promise<AskResponse> {
   return post<AskRequest, AskResponse>('/query', { question });
 }
+
+export async function fetchGraph(repoUrl: string): Promise<{ nodes: any[]; edges: any[] }> {
+  const res = await fetch(`${BASE}/graph?repoUrl=${encodeURIComponent(repoUrl)}`);
+  
+  if (res.status === 404) {
+    throw new Error("Code map isn't ready yet for this repo.");
+  }
+  
+  const data = await res.json();
+  
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error ?? `Request failed: ${res.status}`);
+  }
+  
+  return data;
+}

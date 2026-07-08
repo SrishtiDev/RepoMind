@@ -4,6 +4,7 @@ import "dotenv/config";
 
 import ingestRouter from "./routes/ingest";
 import queryRouter from "./routes/query";
+import graphRouter from "./routes/graph";
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,9 @@ app.use("/ingest", ingestRouter);
 
 /** Retrieval + agent Q&A */
 app.use("/query", queryRouter);
+
+/** Visual Code Map */
+app.use("/graph", graphRouter);
 
 // 404 fallback
 app.use((_req, res) => {

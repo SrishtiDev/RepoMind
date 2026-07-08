@@ -96,6 +96,13 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
     // Generate embeddings via Google Gemini
     const vectors = await embedder.embedDocuments(texts);
 
+    // Guard: ensure no empty embeddings
+    for (let i = 0; i < vectors.length; i++) {
+      if (!vectors[i] || vectors[i].length === 0) {
+        throw new Error(`Embedding generation returned empty vector for chunk ${batch[i].metadata.chunkIndex} — check API key/model configuration`);
+      }
+    }
+
     // Build Qdrant upsert points
     const points = batch.map((chunk, i) => ({
       id: uuidv4(),            // unique UUID per chunk

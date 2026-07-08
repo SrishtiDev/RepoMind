@@ -21,9 +21,9 @@ export interface TaggedNode {
   tags: string[];
 }
 
-// Instantiate the model - usually gemini-1.5-flash is preferred for fast bulk processing
+// Instantiate the model - usually gemini-flash-latest is preferred for fast bulk processing
 const model = new ChatGoogleGenerativeAI({
-  model: "gemini-1.5-flash",
+  model: "gemini-flash-latest",
   temperature: 0.1, // Low temperature for consistent JSON
   maxOutputTokens: 2048,
 });

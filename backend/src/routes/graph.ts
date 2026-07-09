@@ -62,4 +62,52 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+/**
+ * GET /graph/node-snippet?repoUrl=<github-url>&filepath=<path>&startLine=<n>&endLine=<n>
+ *
+ * Fetches raw file content from GitHub's raw content CDN and returns only the
+ * requested line range. Uses the public raw.githubusercontent.com endpoint so
+ * we don't need to keep a clone on disk after ingestion.
+ *
+ * Line numbers are 1-indexed and both bounds are inclusive.
+ */
+router.get("/node-snippet", async (req: Request, res: Response): Promise<void> => {
+  const { repoUrl, filepath, startLine, endLine } = req.query as Record<string, string>;
+
+  if (!repoUrl || !filepath) {
+    res.status(400).json({ error: "Missing repoUrl or filepath" });
+    return;
+  }
+
+  try {
+    // Convert https://github.com/owner/repo → https://raw.githubusercontent.com/owner/repo/HEAD/<filepath>
+    const ghMatch = repoUrl.match(/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/);
+    if (!ghMatch) {
+      res.status(400).json({ error: "repoUrl must be a GitHub repository URL" });
+      return;
+    }
+
+    const rawUrl = `https://raw.githubusercontent.com/${ghMatch[1]}/HEAD/${filepath}`;
+    const response = await fetch(rawUrl);
+
+    if (!response.ok) {
+      res.status(response.status).json({ error: `GitHub raw fetch failed: ${response.statusText}` });
+      return;
+    }
+
+    const fullContent = await response.text();
+    const allLines = fullContent.split("\n");
+
+    // Clamp to valid bounds (lines are 1-indexed)
+    const start = Math.max(1, parseInt(startLine ?? "1", 10)) - 1;
+    const end = Math.min(allLines.length, parseInt(endLine ?? String(allLines.length), 10));
+    const snippet = allLines.slice(start, end).join("\n");
+
+    res.status(200).json({ snippet, startLine: start + 1, endLine: end });
+  } catch (err: any) {
+    console.error("[Route /graph/node-snippet] Failed to fetch snippet:", err);
+    res.status(500).json({ error: "Failed to fetch code snippet" });
+  }
+});
+
 export default router;

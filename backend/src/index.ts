@@ -9,7 +9,7 @@ import graphRouter from "./routes/graph";
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
 const app = express();
-const PORT = Number(process.env.PORT ?? 3000);
+const PORT = Number(process.env.PORT ?? 3001);
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 

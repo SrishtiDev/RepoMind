@@ -25,6 +25,8 @@ const StarIcon = ({ size = 12 }: { size?: number }) => (
 import Navbar from "./Navbar";
 import GetStartedModal from "./GetStartedModal";
 import CodeBlock from "./CodeBlock";
+import MeaningSection from "./MeaningSection";
+import FeatureGridSection from "./FeatureGridSection";
 
 const SETUP_COMMANDS = `# 1. Clone the repo and install dependencies
 git clone https://github.com/srishti-rawat/RepoMind.git
@@ -213,7 +215,14 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════════════════════════════════
+          PART 1.5 — Meaning & Features
+      ══════════════════════════════════════ */}
+      <MeaningSection />
+      <FeatureGridSection />
+
+      {/* ══════════════════════════════════════
           PART 2 — "Get started in 30 seconds"
+
       ══════════════════════════════════════ */}
       <section
         id="setup"

@@ -1,7 +1,7 @@
 // All API calls go through this module. The base URL resolves to the backend
 // server in development (which runs on port 3000) and should
 // be set via NEXT_PUBLIC_API_BASE in production.
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3000';
+const BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
 
 // ─── Request / Response types ────────────────────────────────────────────────
 
@@ -76,5 +76,25 @@ export async function fetchGraph(repoUrl: string): Promise<{ nodes: any[]; edges
     throw new Error((data as { error?: string }).error ?? `Request failed: ${res.status}`);
   }
   
+  return data;
+}
+
+export async function fetchNodeSnippet(
+  repoUrl: string,
+  filepath: string,
+  startLine?: number,
+  endLine?: number,
+): Promise<{ snippet: string; startLine: number; endLine: number }> {
+  const params = new URLSearchParams({ repoUrl, filepath });
+  if (startLine !== undefined) params.set("startLine", String(startLine));
+  if (endLine !== undefined) params.set("endLine", String(endLine));
+
+  const res = await fetch(`${BASE}/graph/node-snippet?${params.toString()}`);
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error ?? `Snippet fetch failed: ${res.status}`);
+  }
+
   return data;
 }

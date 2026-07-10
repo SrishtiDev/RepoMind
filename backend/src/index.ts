@@ -6,6 +6,12 @@ import ingestRouter from "./routes/ingest";
 import queryRouter from "./routes/query";
 import graphRouter from "./routes/graph";
 
+// ─── Combined Worker for Free Tier ────────────────────────────────────────────
+// By importing the worker here, the single Express process will ALSO listen to 
+// the Redis queue and process background jobs. This saves you from needing a 
+// paid second Background Worker service on Render.
+import "./queue/worker";
+
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
 const app = express();

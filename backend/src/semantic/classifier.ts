@@ -107,12 +107,18 @@ ${nodesText}`;
     }
 
     return validResults;
-  } catch (err) {
+  } catch (err: any) {
     console.error(`[Semantic Classifier] Failed to classify batch of ${nodes.length} nodes:`, err);
     if (rawContent !== undefined) {
       console.error(`[Semantic Classifier] Raw response (truncated):`, String(rawContent).substring(0, 200));
     }
-    // Return empty results rather than crashing the whole job
+
+    const isDailyQuotaError = err?.message?.toLowerCase().includes("perday") || err?.message?.includes("GenerateRequestsPerDayPerProjectPerModel-FreeTier");
+    if (isDailyQuotaError) {
+      throw err; // Re-throw to allow upstream budget tracking to catch it
+    }
+
+    // For transient errors, return empty results rather than crashing the whole job
     return [];
   }
 }

@@ -36,7 +36,9 @@ export class RateLimiter {
           resolve(result);
         } catch (err: any) {
           const isRateLimit = err?.status === 429 || err?.message?.includes("429");
-          if (isRateLimit) {
+          const isDailyQuota = err?.message?.toLowerCase().includes("perday") || err?.message?.includes("GenerateRequestsPerDayPerProjectPerModel-FreeTier");
+
+          if (isRateLimit && !isDailyQuota) {
             console.warn(`[RateLimiter] 429 Too Many Requests encountered. Waiting 60s to retry ONCE...`);
             setTimeout(async () => {
               try {

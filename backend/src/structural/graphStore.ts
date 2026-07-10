@@ -19,6 +19,7 @@
 
 import { DirectedGraph } from "graphology";
 import { QdrantClient } from "@qdrant/js-client-rest";
+import { v5 as uuidv5 } from "uuid";
 import crypto from "crypto";
 import "dotenv/config";
 
@@ -28,6 +29,9 @@ const GRAPH_COLLECTION = "repomind_graphs";
 // Qdrant requires vectors; we use a 1-dim zero vector as a dummy since
 // we're only using the payload for document storage.
 const DUMMY_VECTOR_SIZE = 1;
+
+// Fixed UUID namespace for generating deterministic point IDs from repo URLs
+const REPOMIND_GRAPH_NAMESPACE = "1b671a64-40d5-491e-99b0-da01ff1f3341";
 
 // ─── Client ───────────────────────────────────────────────────────────────────
 
@@ -41,13 +45,11 @@ function getQdrantClient(): QdrantClient {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Derives a stable, deterministic Qdrant point ID (unsigned 64-bit integer
- * as a string) from the repo URL so saves are idempotent (upsert == overwrite).
+ * Derives a stable, deterministic Qdrant point ID (UUIDv5)
+ * from the repo URL so saves are idempotent (upsert == overwrite).
  */
 function repoUrlToPointId(repoUrl: string): string {
-  // Take the first 15 hex chars of MD5 → fits in a JS safe integer
-  const hex = crypto.createHash("md5").update(repoUrl).digest("hex").slice(0, 15);
-  return String(parseInt(hex, 16));
+  return uuidv5(repoUrl, REPOMIND_GRAPH_NAMESPACE);
 }
 
 /**

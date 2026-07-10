@@ -22,7 +22,7 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
     const graph = await loadGraph(repoUrl);
     
     if (!graph) {
-      console.log(`[Route /graph] Graph request for ${repoUrl}: no graph found in Redis`);
+      console.log(`[Route /graph] Graph request for ${repoUrl}: no graph found in Qdrant`);
       res.status(404).json({ error: "Code map isn't ready yet for this repo" });
       return;
     }

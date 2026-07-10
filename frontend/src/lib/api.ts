@@ -1,7 +1,7 @@
 // All API calls go through this module. The base URL resolves to the backend
 // server in development (which runs on port 3000) and should
 // be set via NEXT_PUBLIC_API_BASE in production.
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
+const BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'https://repomind-6695.onrender.com';
 
 // ─── Request / Response types ────────────────────────────────────────────────
 

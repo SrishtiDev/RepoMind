@@ -2,6 +2,7 @@ import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { v4 as uuidv4 } from "uuid";
 import Redis from "ioredis";
+import pLimit from "p-limit";
 import { CodeChunk } from "./chunker";
 import { geminiRateLimiter } from "../lib/rateLimiter";
 import "dotenv/config";
@@ -156,29 +157,20 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
 
   await ensureCollection(qdrant);
 
-  const batches = batchArray(chunks, EMBED_BATCH_SIZE);
-  console.log(
-    `[Embed] Processing ${chunks.length} chunks in ${batches.length} batches (size=${EMBED_BATCH_SIZE})...`
-  );
+  const limit = pLimit(3); // Cap at 3 concurrent API calls
+  console.log(`[Embed] Processing ${chunks.length} chunks with concurrency limit of 3...`);
 
   let totalUpserted = 0;
   let totalSkipped = 0;
   const skippedChunkIds: string[] = [];
 
-  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-    const batch = batches[batchIdx];
-    console.log(
-      `[Embed] Batch ${batchIdx + 1}/${batches.length} — embedding ${batch.length} chunks...`
-    );
-
-    // Embed each chunk individually with retry so one failure doesn't lose the whole batch
-    const points = [];
-    for (const chunk of batch) {
+  // Process all chunks concurrently up to the limit
+  const embedPromises = chunks.map((chunk) => 
+    limit(async () => {
       const chunkLabel = `${chunk.metadata.filepath}#${chunk.metadata.chunkIndex}`;
       const vector = await embedWithRetry(embedder, chunk.content, chunkLabel);
 
       if (vector === null) {
-        // Skip this chunk, record it for later retry
         totalSkipped++;
         skippedChunkIds.push(chunkLabel);
         try {
@@ -192,13 +184,12 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
             })
           );
         } catch (redisErr) {
-          // Redis push failure is non-fatal
           console.warn("[Embed] Could not push failed chunk to Redis:", redisErr);
         }
-        continue; // Skip to next chunk
+        return null;
       }
 
-      points.push({
+      return {
         id: uuidv4(),
         vector,
         payload: {
@@ -208,29 +199,26 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
           chunkIndex: chunk.metadata.chunkIndex,
           repoUrl: chunk.metadata.repoUrl,
         },
-      });
-    }
+      };
+    })
+  );
 
-    // Only upsert if we have valid points in this batch
-    if (points.length > 0) {
+  const results = await Promise.all(embedPromises);
+  const points = results.filter((p): p is NonNullable<typeof p> => p !== null);
+
+  if (points.length > 0) {
+    // Upsert to Qdrant in batches of 50 to avoid payload size issues
+    const qdrantBatches = batchArray(points, 50);
+    for (let i = 0; i < qdrantBatches.length; i++) {
       try {
-        await qdrant.upsert(COLLECTION_NAME, { wait: true, points });
-        totalUpserted += points.length;
-        console.log(`[Embed] Batch ${batchIdx + 1} — upserted ${points.length} points to Qdrant.`);
+        await qdrant.upsert(COLLECTION_NAME, { wait: true, points: qdrantBatches[i] });
+        totalUpserted += qdrantBatches[i].length;
       } catch (err: any) {
-        // Qdrant upsert failure is also non-fatal — log and continue
         console.error(
-          `[Embed] ⚠ Qdrant upsert failed for batch ${batchIdx + 1}:`,
+          `[Embed] ⚠ Qdrant upsert failed for batch ${i + 1}:`,
           err?.data ?? err?.message ?? err
         );
       }
-    } else {
-      console.warn(`[Embed] Batch ${batchIdx + 1} — all chunks failed embedding, nothing to upsert.`);
-    }
-
-    // Inter-batch delay to reduce sustained rate-limit pressure
-    if (batchIdx < batches.length - 1) {
-      await sleep(INTER_BATCH_DELAY_MS);
     }
   }
 

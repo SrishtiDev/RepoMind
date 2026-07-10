@@ -3,15 +3,24 @@ import { cloneRepo, cleanupRepo } from "../ingestion/clone";
 import { chunkRepository } from "../ingestion/chunker";
 import { embedAndStore } from "../ingestion/embed";
 import { IngestionJobData } from "./producer";
-import { parseFile } from "../structural/parser";
-import { extractFileData, FileData } from "../structural/extractor";
+import { FileData } from "../structural/extractor";
 import { buildGraph } from "../structural/graphBuilder";
 import { saveGraph, loadGraph } from "../structural/graphStore";
 import { tagGraph } from "../semantic/batchProcessor";
 import { glob } from "glob";
 import fs from "fs/promises";
 import path from "path";
+import Piscina from "piscina";
 import "dotenv/config";
+
+// Setup Piscina worker pool for CPU-bound AST parsing
+const ext = path.extname(__filename); // .ts in dev, .js in prod
+const workerPath = path.join(__dirname, `../structural/parserWorker${ext}`);
+const parserPool = new Piscina({
+  filename: workerPath,
+  maxThreads: 2, // Keep thread count low on free tier
+});
+
 
 // ─── Redis Connection ─────────────────────────────────────────────────────────
 const connection: ConnectionOptions = {
@@ -61,19 +70,30 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
         const extractedData: FileData[] = [];
         const fileContents = new Map<string, string>();
 
-        for (const filepath of files) {
+        // Offload CPU-bound parsing to Piscina worker threads
+        // This prevents AST parsing from blocking the main Express event loop
+        const parsePromises = files.map(async (filepath) => {
           try {
             const content = await fs.readFile(filepath, "utf-8");
             const relPath = path.relative(cloneDir as string, filepath);
-            fileContents.set(relPath, content);
-
-            const tree = parseFile(filepath, content);
-            if (tree) {
-              const data = extractFileData(relPath, tree);
-              extractedData.push(data);
-            }
+            
+            // Execute parse and extract in the worker thread
+            const data: FileData | null = await parserPool.run({ filepath, content, relPath });
+            
+            return { relPath, content, data };
           } catch (e) {
             console.error(`[Worker] Structural extraction failed for ${filepath}`, e);
+            return null;
+          }
+        });
+
+        const results = await Promise.all(parsePromises);
+
+        for (const res of results) {
+          if (!res) continue;
+          fileContents.set(res.relPath, res.content);
+          if (res.data) {
+            extractedData.push(res.data);
           }
         }
 

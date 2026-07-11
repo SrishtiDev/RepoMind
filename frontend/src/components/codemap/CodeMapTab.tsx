@@ -87,15 +87,23 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
     return counts;
   }, [graphData]);
 
-  // ── Derive filtered nodes (dim if not in active layer) ─────────────────────
+  // ── Derive filtered nodes (actually filter them out to simplify layout) ──────────
   const filteredNodes = useMemo(() => {
     if (!graphData) return [];
     if (activeLayer === "all") return graphData.nodes;
-    return graphData.nodes.map((n) => {
+    return graphData.nodes.filter((n) => {
       const layer = classifyNodeLayer(n);
-      return { ...n, _dimmed: layer !== activeLayer };
+      return layer === activeLayer;
     });
   }, [graphData, activeLayer]);
+
+  // ── Derive filtered edges (must match filtered nodes) ───────────────────────────
+  const filteredEdges = useMemo(() => {
+    if (!graphData) return [];
+    if (activeLayer === "all") return graphData.edges;
+    const validNodeIds = new Set(filteredNodes.map(n => n.id));
+    return graphData.edges.filter(e => validNodeIds.has(e.source) && validNodeIds.has(e.target));
+  }, [graphData, filteredNodes, activeLayer]);
 
   // ── Derive connections for selected node ───────────────────────────────────
   const selectedConnections = useMemo(() => {
@@ -228,7 +236,7 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
 
           <GraphView
             initialNodes={filteredNodes}
-            initialEdges={graphData.edges}
+            initialEdges={filteredEdges}
             activeLayer={activeLayer}
             tourActiveTag={activeTag}
             onNodeClick={(data) =>

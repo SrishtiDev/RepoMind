@@ -52,25 +52,46 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
   });
 
   edges.forEach((edge) => {
-    dagreGraph.setEdge(edge.source, edge.target);
+    // Dagre crashes if the graph contains self-loops (recursive calls).
+    // We must ignore self-loops for the layout calculation.
+    if (edge.source !== edge.target) {
+      dagreGraph.setEdge(edge.source, edge.target);
+    }
   });
 
-  dagre.layout(dagreGraph);
+  try {
+    dagre.layout(dagreGraph);
 
-  const newNodes = nodes.map((node) => {
-    const nodeWithPosition = dagreGraph.node(node.id);
-    return {
+    const newNodes = nodes.map((node) => {
+      const nodeWithPosition = dagreGraph.node(node.id);
+      if (!nodeWithPosition) {
+        throw new Error(`Dagre layout missing node: ${node.id}`);
+      }
+      return {
+        ...node,
+        targetPosition: "left" as any,
+        sourcePosition: "right" as any,
+        position: {
+          x: nodeWithPosition.x - 90,
+          y: nodeWithPosition.y - 30,
+        },
+      };
+    });
+
+    return { nodes: newNodes, edges };
+  } catch (error) {
+    console.error("[GraphView] Dagre layout failed:", error);
+    // Fallback: arrange nodes in a simple grid instead of stacking them at 0,0
+    let cols = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
+    const newNodes = nodes.map((node, idx) => ({
       ...node,
-      targetPosition: "left" as any,
-      sourcePosition: "right" as any,
       position: {
-        x: nodeWithPosition.x - 90,
-        y: nodeWithPosition.y - 30,
+        x: (idx % cols) * 200,
+        y: Math.floor(idx / cols) * 100,
       },
-    };
-  });
-
-  return { nodes: newNodes, edges };
+    }));
+    return { nodes: newNodes, edges };
+  }
 };
 
 interface Props {

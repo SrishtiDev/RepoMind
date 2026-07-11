@@ -2,7 +2,7 @@ import { DirectedGraph } from "graphology";
 import { classifyBatch, NodeSummary, TaggedNode } from "./classifier";
 import { consumeQuota, exhaustQuota } from "../lib/geminiQuota";
 
-export const BATCH_SIZE = 40; // Increased from 12 to 40 to pack more nodes per request
+export const BATCH_SIZE = 20; // Reduced from 40 to avoid Gemini response truncation on large batches
 const MAX_CONCURRENCY = 2; // Reduced slightly to avoid bursting the RPM
 
 /**

@@ -43,10 +43,17 @@ export async function retrieveNode(
 ): Promise<Partial<AgentState>> {
   // Prefer the refined query produced by the assess node on retry passes.
   const queryText = state.refinedQuery?.trim() || state.question.trim();
+  const repoUrl = state.repoUrl?.trim();
 
   if (!queryText) {
     throw new Error(
       "[Retrieve] Cannot embed an empty query. Both question and refinedQuery are blank."
+    );
+  }
+
+  if (!repoUrl) {
+    throw new Error(
+      "[Retrieve] No repoUrl in state — cannot scope search to a specific repository."
     );
   }
 
@@ -63,18 +70,45 @@ export async function retrieveNode(
     );
   }
 
-  // Search Qdrant for the nearest chunks.
+  // Search Qdrant for the nearest chunks — SCOPED to the target repo.
+  // Using Qdrant's payload filter prevents chunks from other repos from
+  // leaking into results, which would cause the LLM to hallucinate answers
+  // about the wrong codebase.
   let searchResults: Awaited<ReturnType<typeof qdrant.search>>;
   try {
     searchResults = await qdrant.search(COLLECTION_NAME, {
       vector: queryVector,
       limit: TOP_K,
-      with_payload: true, // we need filename/filepath/chunkIndex from payload
+      with_payload: true,
+      filter: {
+        must: [
+          {
+            key: "repoUrl",
+            match: { value: repoUrl },
+          },
+        ],
+      },
     });
   } catch (err: any) {
     throw new Error(
       `[Retrieve] Qdrant search failed (collection="${COLLECTION_NAME}"): ${err?.message ?? err}`
     );
+  }
+
+  // Safety: if zero chunks match this repo, the repo hasn't finished indexing.
+  // Do NOT fall through with empty results — the LLM would either refuse or
+  // hallucinate from stale context. Return a sentinel answer instead.
+  if (searchResults.length === 0) {
+    console.warn(
+      `[Retrieve] Zero chunks found for repoUrl="${repoUrl}". Repo likely not indexed yet.`
+    );
+    // Return special state that answer node will recognise
+    return {
+      retrievedChunks: [],
+      isSufficient: true,      // skip assess/retry loop — we have nothing to search
+      answer: "This repository hasn't been indexed yet (or indexing is still in progress). Please wait a moment and try again.",
+      sources: [],
+    };
   }
 
   // Map raw Qdrant results into typed Chunk objects.
@@ -91,7 +125,7 @@ export async function retrieveNode(
     });
 
   console.log(
-    `[Retrieve] Query: "${queryText.slice(0, 60)}..." → ${retrievedChunks.length} chunks returned.`
+    `[Retrieve] Query: "${queryText.slice(0, 60)}..." → ${retrievedChunks.length} chunks returned (repo-scoped: ${repoUrl}).`
   );
 
   return { retrievedChunks };

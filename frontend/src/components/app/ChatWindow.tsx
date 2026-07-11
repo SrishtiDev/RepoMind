@@ -34,7 +34,7 @@ function Spinner() {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export default function ChatWindow() {
+export default function ChatWindow({ repoUrl }: { repoUrl: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -58,7 +58,7 @@ export default function ChatWindow() {
     setLoading(true);
 
     try {
-      const res = await askQuestion(trimmed);
+      const res = await askQuestion(trimmed, repoUrl);
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', text: res.answer, sources: res.sources },

@@ -26,7 +26,7 @@ export interface TaggedNode {
 const model = new ChatGoogleGenerativeAI({
   model: "gemini-flash-latest",
   temperature: 0.1, // Low temperature for consistent JSON
-  maxOutputTokens: 2048,
+  maxOutputTokens: 4096, // Raised from 2048 — 20-node batches need more room
 });
 
 export async function classifyBatch(nodes: NodeSummary[]): Promise<TaggedNode[]> {
@@ -110,7 +110,38 @@ ${nodesText}`;
   } catch (err: any) {
     console.error(`[Semantic Classifier] Failed to classify batch of ${nodes.length} nodes:`, err);
     if (rawContent !== undefined) {
-      console.error(`[Semantic Classifier] Raw response (truncated):`, String(rawContent).substring(0, 200));
+      const raw = String(rawContent);
+      console.error(`[Semantic Classifier] Raw response (truncated to 400 chars):`, raw.substring(0, 400));
+
+      // ── Lenient truncation repair ──────────────────────────────────────────────────
+      // If the error is a JSON parse failure (truncated array), try to recover
+      // the last fully-closed object by scanning backward for the last '}'.
+      // This saves partial results from batches where the LLM ran out of tokens.
+      if (err instanceof SyntaxError) {
+        try {
+          const start = raw.indexOf("[");
+          const lastClose = raw.lastIndexOf("}");
+          if (start !== -1 && lastClose !== -1 && lastClose > start) {
+            const repaired = raw.slice(start, lastClose + 1) + "]";
+            const partialParsed = JSON.parse(repaired);
+            if (Array.isArray(partialParsed) && partialParsed.length > 0) {
+              const recovered: TaggedNode[] = [];
+              for (const item of partialParsed) {
+                if (item && typeof item.nodeId === "string" && Array.isArray(item.tags)) {
+                  const validTags = item.tags.filter((t: string) => VALID_TAGS.has(t)).slice(0, 2);
+                  recovered.push({ nodeId: item.nodeId, tags: validTags });
+                }
+              }
+              console.warn(
+                `[Semantic Classifier] Truncation-repair recovered ${recovered.length}/${nodes.length} nodes from partial response.`
+              );
+              return recovered;
+            }
+          }
+        } catch {
+          // Repair also failed — fall through to empty return
+        }
+      }
     }
 
     const isDailyQuotaError = err?.message?.toLowerCase().includes("perday") || err?.message?.includes("GenerateRequestsPerDayPerProjectPerModel-FreeTier");

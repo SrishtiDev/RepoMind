@@ -166,6 +166,18 @@ worker.on("progress", (job, progress) => {
   console.log(`[Worker] ⏳ Job ${job.id} progress: ${progress}%`);
 });
 
+// "active" fires the moment the worker dequeues and starts processing a job.
+// Seeing this log means the job is NOT stuck — it was queued and is now running.
+worker.on("active", (job) => {
+  console.log(`[Worker] ▶ Job ${job.id} is now ACTIVE (dequeued from waiting): ${job.data.repoUrl}`);
+});
+
+// "stalled" fires when a job was active but its keepalive heartbeat was lost
+// (e.g. process crashed mid-job). BullMQ will re-queue it automatically.
+worker.on("stalled", (jobId) => {
+  console.warn(`[Worker] ⚠ Job ${jobId} stalled — will be re-queued by BullMQ.`);
+});
+
 console.log(`[Worker] Listening on queue "${QUEUE_NAME}"...`);
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────

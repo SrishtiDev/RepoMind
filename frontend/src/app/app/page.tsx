@@ -24,7 +24,7 @@ export default function AppPage() {
           </div>
           
           <div className="flex-1 min-h-[400px]">
-            <ChatWindow />
+            <ChatWindow repoUrl={activeRepoUrl} />
           </div>
         </div>
       </div>

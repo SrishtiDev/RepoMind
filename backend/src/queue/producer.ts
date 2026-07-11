@@ -48,6 +48,21 @@ export async function addIngestionJob(data: IngestionJobData): Promise<string> {
     removeOnFail: 50,
   });
 
-  console.log(`[Producer] Job ${job.id} added for repo: ${data.repoUrl}`);
+  // Log queue depth so production logs make it clear when a job is waiting
+  // behind an active one rather than silently doing nothing.
+  try {
+    const [active, waiting] = await Promise.all([
+      queue.getActiveCount(),
+      queue.getWaitingCount(),
+    ]);
+    console.log(
+      `[Producer] Job ${job.id} added for repo: ${data.repoUrl} | ` +
+      `Queue state: ${active} active, ${waiting} waiting.` +
+      (active > 0 ? " (Job will start after current active job completes.)" : "")
+    );
+  } catch {
+    console.log(`[Producer] Job ${job.id} added for repo: ${data.repoUrl}`);
+  }
+
   return job.id!;
 }

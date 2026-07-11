@@ -18,6 +18,7 @@ export interface IngestResponse {
 
 export interface AskRequest {
   question: string;
+  repoUrl: string;
 }
 
 export interface Source {
@@ -59,8 +60,8 @@ export function ingestRepo(repoUrl: string): Promise<IngestResponse> {
   return post<IngestRequest, IngestResponse>('/ingest', { repoUrl });
 }
 
-export function askQuestion(question: string): Promise<AskResponse> {
-  return post<AskRequest, AskResponse>('/query', { question });
+export function askQuestion(question: string, repoUrl: string): Promise<AskResponse> {
+  return post<AskRequest, AskResponse>('/query', { question, repoUrl });
 }
 
 export async function fetchGraph(repoUrl: string): Promise<{ nodes: any[]; edges: any[] }> {

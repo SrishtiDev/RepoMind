@@ -17,7 +17,7 @@ const router = Router();
  *  500 on any graph/LLM/Qdrant failure
  */
 router.post("/", async (req: Request, res: Response): Promise<void> => {
-  const { question } = req.body as { question?: string };
+  const { question, repoUrl } = req.body as { question?: string; repoUrl?: string };
 
   // ── Validation ──────────────────────────────────────────────────────────────
   if (!question || typeof question !== "string" || !question.trim()) {
@@ -28,10 +28,19 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  if (!repoUrl || typeof repoUrl !== "string" || !repoUrl.trim()) {
+    res.status(400).json({
+      success: false,
+      error: "Missing or invalid field: repoUrl (required to scope search to a specific repository)",
+    });
+    return;
+  }
+
   // ── Graph Invocation ────────────────────────────────────────────────────────
   try {
     const initialState: AgentState = {
       question: question.trim(),
+      repoUrl: repoUrl.trim(),
       retrievedChunks: [],
       isSufficient: false,
       retryCount: 0,

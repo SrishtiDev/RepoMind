@@ -150,6 +150,7 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
 const worker = new Worker<IngestionJobData>(QUEUE_NAME, processIngestionJob, {
   connection,
   concurrency: 1,   // 1 at a time on free tier to avoid OOM + rate limits
+  lockDuration: 120000,
 });
 
 // ─── Lifecycle Hooks ─────────────────────────────────────────────────────────

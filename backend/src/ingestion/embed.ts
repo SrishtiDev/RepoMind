@@ -52,8 +52,33 @@ async function ensureCollection(client: QdrantClient): Promise<void> {
       vectors: { size: VECTOR_SIZE, distance: "Cosine" },
     });
     console.log(`[Embed] Collection created.`);
-  } else {
-    console.log(`[Embed] Collection "${COLLECTION_NAME}" already exists.`);
+  }
+
+  // Ensure a keyword payload index on "repoUrl" exists so Qdrant can
+  // efficiently execute filtered searches (filter: must[repoUrl == X]).
+  // Without this index Qdrant returns "Bad Request" on filtered queries.
+  // createPayloadIndex is idempotent — safe to call on every ingestion run.
+  try {
+    await client.createPayloadIndex(COLLECTION_NAME, {
+      field_name: "repoUrl",
+      field_schema: "keyword",
+      wait: true,
+    });
+    console.log(`[Embed] Payload index on "repoUrl" ensured.`);
+  } catch (indexErr: any) {
+    // Qdrant may return a conflict/400 if the index already exists —
+    // treat that as a no-op; log only unexpected errors.
+    const alreadyExists =
+      indexErr?.data?.status?.error?.toLowerCase().includes("already exists") ||
+      indexErr?.message?.toLowerCase().includes("already exists");
+    if (!alreadyExists) {
+      console.warn(
+        `[Embed] Could not ensure repoUrl payload index:`,
+        indexErr?.data ?? indexErr?.message
+      );
+    } else {
+      console.log(`[Embed] repoUrl payload index already exists — no-op.`);
+    }
   }
 }
 

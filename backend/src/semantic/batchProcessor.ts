@@ -3,7 +3,6 @@ import { classifyBatch, NodeSummary, TaggedNode } from "./classifier";
 import { consumeQuota, exhaustQuota } from "../lib/geminiQuota";
 
 export const BATCH_SIZE = 20; // Reduced from 40 to avoid Gemini response truncation on large batches
-const MAX_CONCURRENCY = 2; // Reduced slightly to avoid bursting the RPM
 
 /**
  * Extracts the snippet for a node given the start/end lines and the full file content.

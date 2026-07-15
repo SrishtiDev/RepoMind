@@ -17,6 +17,10 @@ const router = Router();
  *  500 on any graph/LLM/Qdrant failure
  */
 router.post("/", async (req: Request, res: Response): Promise<void> => {
+  // TODO(security): repoUrl is accepted directly from the client's request body with no
+  // authorization checks. A malicious user could pass a known repoUrl to access data
+  // from another tenant's repository. We need to implement an auth layer to verify the
+  // caller has access to the requested repository before passing it downstream.
   const { question, repoUrl } = req.body as { question?: string; repoUrl?: string };
 
   // ── Validation ──────────────────────────────────────────────────────────────

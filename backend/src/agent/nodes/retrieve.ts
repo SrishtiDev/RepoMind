@@ -1,5 +1,5 @@
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
-import { QdrantClient } from "@qdrant/js-client-rest";
+import { retrieveForTenant } from "../../lib/retrieval";
 import { AgentState, Chunk } from "../state";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -22,12 +22,6 @@ function getEmbedder(): GoogleGenerativeAIEmbeddings {
   });
 }
 
-function getQdrantClient(): QdrantClient {
-  return new QdrantClient({
-    url: process.env.QDRANT_URL ?? "http://localhost:6333",
-    apiKey: process.env.QDRANT_API_KEY, // undefined → no auth (local dev)
-  });
-}
 
 // ─── Node ─────────────────────────────────────────────────────────────────────
 
@@ -58,7 +52,6 @@ export async function retrieveNode(
   }
 
   const embedder = getEmbedder();
-  const qdrant = getQdrantClient();
 
   // Embed the query into the same vector space used at ingestion time.
   let queryVector: number[];
@@ -74,20 +67,12 @@ export async function retrieveNode(
   // Using Qdrant's payload filter prevents chunks from other repos from
   // leaking into results, which would cause the LLM to hallucinate answers
   // about the wrong codebase.
-  let searchResults: Awaited<ReturnType<typeof qdrant.search>>;
+  let searchResults: any;
   try {
-    searchResults = await qdrant.search(COLLECTION_NAME, {
-      vector: queryVector,
-      limit: TOP_K,
-      with_payload: true,
-      filter: {
-        must: [
-          {
-            key: "repoUrl",
-            match: { value: repoUrl },
-          },
-        ],
-      },
+    searchResults = await retrieveForTenant({
+      repoUrl,
+      queryVector,
+      topK: TOP_K,
     });
   } catch (err: any) {
     throw new Error(

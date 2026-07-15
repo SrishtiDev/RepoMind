@@ -172,9 +172,22 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
             <span className="text-2xl">🗺️</span>
           </div>
           <p className="text-[#d4a24c] font-medium text-lg mb-2">{error}</p>
-          <p className="text-white/40 text-sm max-w-md">
+          <p className="text-white/40 text-sm max-w-md mb-4">
             Ensure the structural and semantic pipelines have successfully ingested this repository.
           </p>
+          <button
+            onClick={() => {
+              setLoading(true);
+              setError(null);
+              fetchGraph(repoUrl)
+                .then((data) => setGraphData(data))
+                .catch((err) => setError(err.message))
+                .finally(() => setLoading(false));
+            }}
+            className="px-4 py-2 bg-[#d4a24c]/10 hover:bg-[#d4a24c]/20 text-[#d4a24c] rounded-md transition-colors border border-[#d4a24c]/30 font-medium shadow-[0_0_15px_rgba(212,162,76,0.1)]"
+          >
+            Refresh Map
+          </button>
         </div>
       )}
 

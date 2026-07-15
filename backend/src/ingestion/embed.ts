@@ -234,7 +234,10 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
   );
 
   const results = await Promise.all(embedPromises);
-  const points = results.filter((p): p is NonNullable<typeof p> => p !== null).flat();
+  const points = results
+    .filter((p): p is NonNullable<typeof p> => p !== null)
+    .flat()
+    .filter(p => p.vector && p.vector.length > 0);
 
   if (points.length > 0) {
     // Upsert to Qdrant in batches of 50 to avoid payload size issues

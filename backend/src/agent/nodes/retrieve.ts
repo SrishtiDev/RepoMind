@@ -98,8 +98,8 @@ export async function retrieveNode(
 
   // Map raw Qdrant results into typed Chunk objects.
   const retrievedChunks: Chunk[] = searchResults
-    .filter((r) => r.payload) // guard against missing payloads
-    .map((r) => {
+    .filter((r: any) => r.payload) // guard against missing payloads
+    .map((r: any) => {
       const p = r.payload as Record<string, unknown>;
       return {
         content: String(p.content ?? ""),

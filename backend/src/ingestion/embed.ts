@@ -97,27 +97,26 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Embeds a single chunk's text with exponential backoff on 429 / rate-limit errors.
- * Returns the vector on success, or null if all retries are exhausted.
+ * Embeds a batch of chunks' texts with exponential backoff on 429 / rate-limit errors.
+ * Returns the vectors on success, or null if all retries are exhausted.
  */
-async function embedWithRetry(
+async function embedBatchWithRetry(
   embedder: GoogleGenerativeAIEmbeddings,
-  text: string,
-  chunkId: string | number
-): Promise<number[] | null> {
+  texts: string[],
+  batchId: string | number
+): Promise<number[][] | null> {
   const delays = [10_000, 30_000, 60_000]; // 10s, 30s, 60s
 
   for (let attempt = 0; attempt <= delays.length; attempt++) {
     try {
       const vectors = await geminiRateLimiter.schedule(() =>
-        embedder.embedDocuments([text])
+        embedder.embedDocuments(texts)
       );
 
-      const vector = vectors[0];
-      if (!vector || vector.length === 0) {
-        throw new Error("Empty vector returned by API");
+      if (!vectors || vectors.length !== texts.length) {
+        throw new Error("Mismatch in number of vectors returned by API");
       }
-      return vector;
+      return vectors;
     } catch (err: any) {
       const is429 =
         err?.status === 429 ||
@@ -129,8 +128,8 @@ async function embedWithRetry(
 
       if (isLastAttempt) {
         console.warn(
-          `[Embed] ⚠ Chunk ${chunkId}: all ${delays.length + 1} attempts failed. ` +
-          `Last error: ${err?.message ?? err}. Skipping this chunk.`
+          `[Embed] ⚠ Batch ${batchId}: all ${delays.length + 1} attempts failed. ` +
+          `Last error: ${err?.message ?? err}. Skipping this batch.`
         );
         return null;
       }
@@ -138,14 +137,14 @@ async function embedWithRetry(
       if (is429) {
         const waitMs = delays[attempt];
         console.warn(
-          `[Embed] 429/quota error on chunk ${chunkId} (attempt ${attempt + 1}). ` +
+          `[Embed] 429/quota error on batch ${batchId} (attempt ${attempt + 1}). ` +
           `Retrying after ${waitMs / 1000}s...`
         );
         await sleep(waitMs);
       } else {
         // Non-rate-limit error: still retry but log differently
         console.warn(
-          `[Embed] Non-rate-limit error on chunk ${chunkId} (attempt ${attempt + 1}): ` +
+          `[Embed] Non-rate-limit error on batch ${batchId} (attempt ${attempt + 1}): ` +
           `${err?.message ?? err}. Retrying after ${delays[attempt] / 1000}s...`
         );
         await sleep(delays[attempt]);
@@ -183,40 +182,46 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
   await ensureCollection(qdrant);
 
   const limit = pLimit(3); // Cap at 3 concurrent API calls
-  console.log(`[Embed] Processing ${chunks.length} chunks with concurrency limit of 3...`);
+  const chunkBatches = batchArray(chunks, EMBED_BATCH_SIZE);
+
+  console.log(`[Embed] Processing ${chunks.length} chunks in ${chunkBatches.length} batches...`);
 
   let totalUpserted = 0;
   let totalSkipped = 0;
   const skippedChunkIds: string[] = [];
 
-  // Process all chunks concurrently up to the limit
-  const embedPromises = chunks.map((chunk) => 
+  // Process all batches concurrently up to the limit
+  const embedPromises = chunkBatches.map((batch, batchIdx) => 
     limit(async () => {
-      const chunkLabel = `${chunk.metadata.filepath}#${chunk.metadata.chunkIndex}`;
-      const vector = await embedWithRetry(embedder, chunk.content, chunkLabel);
+      const texts = batch.map(c => c.content);
+      const batchLabel = `Batch-${batchIdx + 1}`;
+      const vectors = await embedBatchWithRetry(embedder, texts, batchLabel);
 
-      if (vector === null) {
-        totalSkipped++;
-        skippedChunkIds.push(chunkLabel);
-        try {
-          await redis.lpush(
-            FAILED_CHUNKS_KEY,
-            JSON.stringify({
-              repoUrl: chunk.metadata.repoUrl,
-              filepath: chunk.metadata.filepath,
-              chunkIndex: chunk.metadata.chunkIndex,
-              failedAt: new Date().toISOString(),
-            })
-          );
-        } catch (redisErr) {
-          console.warn("[Embed] Could not push failed chunk to Redis:", redisErr);
+      if (vectors === null) {
+        totalSkipped += batch.length;
+        for (const chunk of batch) {
+          const chunkLabel = `${chunk.metadata.filepath}#${chunk.metadata.chunkIndex}`;
+          skippedChunkIds.push(chunkLabel);
+          try {
+            await redis.lpush(
+              FAILED_CHUNKS_KEY,
+              JSON.stringify({
+                repoUrl: chunk.metadata.repoUrl,
+                filepath: chunk.metadata.filepath,
+                chunkIndex: chunk.metadata.chunkIndex,
+                failedAt: new Date().toISOString(),
+              })
+            );
+          } catch (redisErr) {
+            console.warn("[Embed] Could not push failed chunk to Redis:", redisErr);
+          }
         }
         return null;
       }
 
-      return {
+      return batch.map((chunk, i) => ({
         id: uuidv4(),
-        vector,
+        vector: vectors[i],
         payload: {
           content: chunk.content,
           filename: chunk.metadata.filename,
@@ -224,12 +229,12 @@ export async function embedAndStore(chunks: CodeChunk[]): Promise<void> {
           chunkIndex: chunk.metadata.chunkIndex,
           repoUrl: chunk.metadata.repoUrl,
         },
-      };
+      }));
     })
   );
 
   const results = await Promise.all(embedPromises);
-  const points = results.filter((p): p is NonNullable<typeof p> => p !== null);
+  const points = results.filter((p): p is NonNullable<typeof p> => p !== null).flat();
 
   if (points.length > 0) {
     // Upsert to Qdrant in batches of 50 to avoid payload size issues

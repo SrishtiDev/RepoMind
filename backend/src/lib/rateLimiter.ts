@@ -59,4 +59,4 @@ export class RateLimiter {
 }
 
 // Global singleton instance for all Gemini calls across the app
-export const geminiRateLimiter = new RateLimiter(4);
+export const geminiRateLimiter = new RateLimiter(15);

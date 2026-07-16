@@ -39,7 +39,8 @@ export async function mergeContexts(
       for (const filepath of files) {
         const content = await fs.readFile(filepath, "utf-8");
         const relPath = path.relative(cloneDir as string, filepath);
-        fileContents.set(relPath, content);
+        const namespacedKey = `${repoUrl}::${relPath}`;
+        fileContents.set(namespacedKey, content);
       }
     } catch (err) {
       console.warn("[Merge Context] Failed to clone/read repository files for graph node snippets.", err);
@@ -48,7 +49,8 @@ export async function mergeContexts(
 
   // 1. Add graph nodes
   for (const node of graphNodes) {
-    const rawContent = fileContents.get(node.filepath);
+    const namespacedKey = `${repoUrl}::${node.filepath}`;
+    const rawContent = fileContents.get(namespacedKey);
     if (!rawContent) continue;
     
     const lines = rawContent.split("\n");
@@ -68,11 +70,17 @@ export async function mergeContexts(
 
   // 2. Add vector chunks, deduplicating if overlapping
   for (const chunk of vectorChunks) {
+    if (chunk.repoUrl !== repoUrl) {
+      console.warn(`[Merge Context] Upstream leak detected: Chunk repoUrl (${chunk.repoUrl}) does not match requested repoUrl (${repoUrl}). Excluding chunk.`);
+      continue;
+    }
+
     let isOverlapping = false;
     
     for (const node of graphNodes) {
        if (node.filepath === chunk.filepath) {
-          const rawContent = fileContents.get(node.filepath);
+          const namespacedKey = `${repoUrl}::${node.filepath}`;
+          const rawContent = fileContents.get(namespacedKey);
           if (rawContent) {
             const lines = rawContent.split("\n");
             const nodeContent = lines.slice(Math.max(0, node.startLine - 1), node.endLine).join("\n");
@@ -89,7 +97,8 @@ export async function mergeContexts(
     if (!isOverlapping) {
       merged.push({
         ...chunk,
-        source: "vector"
+        source: "vector",
+        repoUrl: chunk.repoUrl,
       });
     }
   }

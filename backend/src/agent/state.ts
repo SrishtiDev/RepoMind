@@ -14,6 +14,7 @@ export interface Chunk {
   filename: string;
   filepath: string;
   chunkIndex: number;
+  repoUrl: string;
 }
 
 /** Source reference included in the final answer for attribution. */

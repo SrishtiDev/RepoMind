@@ -106,6 +106,7 @@ export async function retrieveNode(
         filename: String(p.filename ?? "unknown"),
         filepath: String(p.filepath ?? "unknown"),
         chunkIndex: Number(p.chunkIndex ?? 0),
+        repoUrl: String(p.repoUrl ?? "unknown"),
       };
     });
 

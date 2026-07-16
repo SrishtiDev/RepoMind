@@ -64,7 +64,8 @@ export async function mergeContexts(
       filename: path.basename(node.filepath),
       content,
       chunkIndex: -1, // Distinguishes from vector chunks for citation purposes
-      tags: node.tags
+      tags: node.tags,
+      repoUrl
     });
   }
 

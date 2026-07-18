@@ -191,8 +191,6 @@ npm run build
 
 ### IDE Config Snippets
 
-Make sure the Express backend is running (`localhost:3000`) before the agent calls any tool.
-
 #### Claude Code (`~/.claude/mcp.json` or project-level `.mcp.json`)
 ```json
 {
@@ -201,7 +199,7 @@ Make sure the Express backend is running (`localhost:3000`) before the agent cal
       "command": "node",
       "args": ["/home/srishti-rawat/Projects/RepoMind/repomind-mcp/dist/index.js"],
       "env": {
-        "REPOMIND_API_URL": "http://localhost:3000"
+        "REPOMIND_API_URL": "repo-mind-brown.vercel.app"
       }
     }
   }
@@ -216,7 +214,7 @@ Make sure the Express backend is running (`localhost:3000`) before the agent cal
       "command": "node",
       "args": ["/home/srishti-rawat/Projects/RepoMind/repomind-mcp/dist/index.js"],
       "env": {
-        "REPOMIND_API_URL": "http://localhost:3000"
+        "REPOMIND_API_URL": "repo-mind-brown.vercel.app"
       }
     }
   }
@@ -232,7 +230,7 @@ Make sure the Express backend is running (`localhost:3000`) before the agent cal
         "path": "node",
         "args": ["/home/srishti-rawat/Projects/RepoMind/repomind-mcp/dist/index.js"],
         "env": {
-          "REPOMIND_API_URL": "http://localhost:3000"
+          "REPOMIND_API_URL": "repo-mind-brown.vercel.app"
         }
       }
     }

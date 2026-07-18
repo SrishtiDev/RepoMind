@@ -35,8 +35,10 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
         id: node,
         type: attrs.type || "file",
         data: {
+          // For file nodes the key IS the filepath (no attrs.filepath set by graphBuilder),
+          // so we fall back to `node` (the graphology key) to ensure filepath is always defined.
           label: attrs.name || attrs.filepath || node,
-          filepath: attrs.filepath,
+          filepath: attrs.filepath ?? (attrs.type === "file" ? node : undefined),
           tags: attrs.tags || [],
           startLine: attrs.startLine,
           endLine: attrs.endLine

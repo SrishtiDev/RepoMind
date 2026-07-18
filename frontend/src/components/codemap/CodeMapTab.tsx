@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect, useMemo } from "react";
 import { GraphView } from "./GraphView";
 import { GuidedTour } from "./GuidedTour";

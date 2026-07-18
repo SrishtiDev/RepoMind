@@ -207,8 +207,8 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
       if (!pos) throw new Error(`Dagre missing node: ${node.id}`);
       return {
         ...node,
-        targetPosition: "left" as const,
-        sourcePosition: "right" as const,
+        targetPosition: Position.Left,
+        sourcePosition: Position.Right,
         position: {
           x: pos.x - NODE_W / 2,
           y: pos.y - NODE_H / 2,

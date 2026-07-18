@@ -16,29 +16,38 @@ Developers need a way to *query* code the way they query databases.
 
 ## What RepoMind Does
 
-- Paste any public GitHub repo URL
-- RepoMind clones it, chunks the code, and embeds it into a vector store (Qdrant)
-- A LangGraph agent receives your question, retrieves relevant chunks, assesses whether the context is sufficient, retrieves again with a refined query if not, then answers
-- Every answer includes **file name + chunk citations** — grounded in what was actually retrieved, not hallucinated
+- **Intelligent Ingestion**: Paste any public GitHub repo URL to securely clone, chunk, and embed code into a Qdrant vector store (with strict multi-tenant isolation). It also parses AST dependencies to build a structural graph.
+- **Multi-Path Retrieval Agent**: A LangGraph workflow processes questions using parallel vector similarity search and semantic tag-based graph retrieval. The contexts are merged and assessed automatically.
+- **Self-Refining Context**: If the LLM judges retrieved chunks insufficient, it refines the query and loops back to fetch more context (up to 2 retries) before generating an answer.
+- **Accurate Citations**: Every answer includes exact file name and chunk citations grounded in retrieved context, preventing hallucination.
+- **Visual Code Map**: Switch to an interactive 2D node graph to explore the architecture, revealing business logic and structural layers with guided tours.
 
 ---
 
 ## Architecture
 
-```
+```text
 User Query
     │
     ▼
-LangGraph Agent
+LangGraph Agent (Parallel Fan-out)
     │
-    ├── Retrieve Node → Qdrant vector search
-    │       │
-    │       └── Assess: enough context? ──No──► Refine query, re-retrieve (max 2 retries)
-    │                       │
-    │                      Yes
-    │                       │
-    ▼                       ▼
-    └──────────── Answer Node → Response + Citations
+    ├── Vector Retrieve Node → Qdrant similarity search
+    └── Classify Tags Node   → Match business logic tags
+            │
+            ▼
+     Graph Retrieve Node     → Structural context (AST dependencies)
+            │
+            ▼
+      Merge Context Node     → Combine vector + graph results
+            │
+            ▼
+       Assess Node           → Enough context? ──No──► Refine query, re-retrieve (max 2 retries)
+            │
+           Yes
+            │
+            ▼
+       Answer Node           → Final Response + File/Chunk Citations
 ```
 
 **Ingestion Pipeline:**
@@ -73,7 +82,7 @@ Ingestion runs as a background job, not inline in the HTTP request — cloning a
 | Vector Store | Qdrant |
 | Job Queue | BullMQ + Redis |
 | Backend | Node.js + Express |
-| Frontend | React (Vite) + Tailwind |
+| Frontend | React (Vite) + Tailwind CSS + React Flow + Dagre |
 | Embeddings + LLM | Google Gemini |
 
 ---
@@ -88,34 +97,27 @@ RepoMind's agent assesses the retrieved chunks against the question, and if the 
 
 ## Project Structure
 
-```
+```text
 repomind/
 ├── backend/
 │   ├── src/
 │   │   ├── agent/
 │   │   │   ├── graph.ts          # LangGraph StateGraph definition
 │   │   │   ├── state.ts          # Graph state type
-│   │   │   ├── nodes/
-│   │   │   │   ├── retrieve.ts   # Vector search node
-│   │   │   │   ├── assess.ts     # Context sufficiency check + query refinement
-│   │   │   │   └── answer.ts     # Final answer generation with citations
-│   │   ├── ingestion/
-│   │   │   ├── clone.ts          # GitHub repo cloning (simple-git)
-│   │   │   ├── chunker.ts        # Chunking logic
-│   │   │   └── embed.ts          # Embedding + Qdrant insert
-│   │   ├── queue/
-│   │   │   ├── producer.ts       # Adds ingestion job to BullMQ
-│   │   │   └── worker.ts         # Processes ingestion jobs
-│   │   └── routes/
-│   │       ├── ingest.ts         # POST /ingest
-│   │       └── query.ts          # POST /query
+│   │   │   └── nodes/            # Retrieve, classifyTags, graphRetrieve, mergeContext, assess, answer
+│   │   ├── ingestion/            # Repo cloning, chunking, and embedding logic
+│   │   ├── queue/                # BullMQ producer and worker for async jobs
+│   │   ├── routes/               # Express endpoints (POST /ingest, POST /query, GET /graph)
+│   │   ├── semantic/             # Semantic classification and resilience logic
+│   │   └── structural/           # Graph builder (React Flow & Dagre exports)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── RepoInput.tsx
-│   │   │   ├── ChatWindow.tsx
-│   │   │   └── CitationCard.tsx
+│   │   │   ├── app/              # Main chat UI (RepoInput, ChatWindow, CitationCard)
+│   │   │   ├── codemap/          # Visual Code Map exploration (GraphView, GuidedTour)
+│   │   │   └── landing/          # Landing page sections
 │   │   └── App.tsx
+├── repomind-mcp/                 # Model Context Protocol bridge server
 └── README.md
 ```
 

@@ -31,19 +31,36 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
     const edges: any[] = [];
 
     graph.forEachNode((node, attrs) => {
+      const kind: string = attrs.type || "file";
+
+      // Compute a human-readable label:
+      //   file     → relative filepath (the node key itself; GraphView will basename it)
+      //   function/class → symbol name
+      //   external → strip the "external:" key prefix so label = the package name
+      let label: string;
+      if (kind === "external") {
+        // node key is "external:react", "external:@qdrant/js-client-rest", etc.
+        label = node.replace(/^external:/, "");
+      } else {
+        label = attrs.name || attrs.filepath || node;
+      }
+
+      // For file nodes the graphology key IS the filepath, but no attrs.filepath
+      // is set by graphBuilder. Populate it so classifyNodeLayer and NodeDetailPanel work.
+      const filepath: string | undefined =
+        attrs.filepath ?? (kind === "file" ? node : undefined);
+
       nodes.push({
         id: node,
-        type: attrs.type || "file",
+        type: kind,
         data: {
-          // For file nodes the key IS the filepath (no attrs.filepath set by graphBuilder),
-          // so we fall back to `node` (the graphology key) to ensure filepath is always defined.
-          label: attrs.name || attrs.filepath || node,
-          filepath: attrs.filepath ?? (attrs.type === "file" ? node : undefined),
+          label,
+          filepath,
           tags: attrs.tags || [],
           startLine: attrs.startLine,
-          endLine: attrs.endLine
+          endLine: attrs.endLine,
         },
-        position: { x: 0, y: 0 } // required by react-flow, will be auto-layouted on frontend
+        position: { x: 0, y: 0 },
       });
     });
 
@@ -52,7 +69,7 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
         id: edge,
         source,
         target,
-        label: attrs.type
+        label: attrs.type,
       });
     });
 

@@ -19,6 +19,7 @@ const workerPath = path.join(__dirname, `../structural/parserWorker${ext}`);
 const parserPool = new Piscina({
   filename: workerPath,
   maxThreads: 2, // Keep thread count low on free tier
+  execArgv: ext === ".ts" ? ["-r", "ts-node/register"] : [],
 });
 
 

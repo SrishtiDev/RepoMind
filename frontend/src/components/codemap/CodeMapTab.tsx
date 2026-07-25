@@ -4,8 +4,14 @@ import { useState, useEffect, useMemo } from "react";
 import { GraphView } from "./GraphView";
 import { GuidedTour } from "./GuidedTour";
 import { NodeDetailPanel, NodeData } from "./NodeDetailPanel";
+import { BreadcrumbNav, NavLevel } from "./BreadcrumbNav";
 import { fetchGraph } from "../../lib/api";
 import { classifyNodeLayer, NodeLayer } from "./layerClassifier";
+import {
+  computeOverviewGraph,
+  drillIntoModule,
+  ModuleNode,
+} from "./graphHierarchy";
 
 interface CodeMapTabProps {
   repoUrl: string;
@@ -42,29 +48,43 @@ const ACTIVE_LAYER_COLORS: Record<LayerFilter, string> = {
 
 /**
  * CodeMapTab.tsx — Main container for the Code Map feature.
- * Fetches the repo graph, handles the layer filter UI (Frontend / Backend /
- * Testing / Deployment / All), orchestrates GraphView and NodeDetailPanel.
+ *
+ * Navigation model (2-level hierarchy):
+ *   Level 0 (Overview)  — synthetic module nodes, ~8-12 cards grouped by directory
+ *   Level 1 (Drill-down) — raw file/function nodes inside the clicked module
+ *   Right Panel          — NodeDetailPanel (code snippet, tags, connections)
+ *
+ * The full flat graph is fetched once. All hierarchy is computed client-side
+ * via graphHierarchy.ts — no extra API calls.
  */
 export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
+  // ── Raw graph data (fetched once) ──────────────────────────────────────────
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
 
-  // ── Layer filter (new 4-way system) ────────────────────────────────────────
+  // ── Navigation stack ───────────────────────────────────────────────────────
+  // navStack[0] is always { level: "overview" }
+  // navStack[1] is { level: "module", moduleId, label } when drilled in
+  const [navStack, setNavStack] = useState<NavLevel[]>([{ level: "overview" }]);
+
+  // ── Layer filter (only meaningful at drill-down level) ────────────────────
   const [activeLayer, setActiveLayer] = useState<LayerFilter>("all");
 
-  // ── Guided Tour (still driven by semantic tags — untouched) ────────────────
+  // ── Guided Tour ────────────────────────────────────────────────────────────
   const [tourActive, setTourActive] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
-  // ── Selected node ──────────────────────────────────────────────────────────
+  // ── Selected leaf node ─────────────────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
 
+  // ── Fetch graph data ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!repoUrl) return;
     setLoading(true);
     setError(null);
     setSelectedNode(null);
+    setNavStack([{ level: "overview" }]);
 
     fetchGraph(repoUrl)
       .then((data) => {
@@ -75,39 +95,70 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
       .finally(() => setLoading(false));
   }, [repoUrl]);
 
-  // ── Compute layer counts from raw graph data ───────────────────────────────
+  // ── Derived: current nav level ─────────────────────────────────────────────
+  const currentLevel = navStack[navStack.length - 1];
+  const isOverview = currentLevel.level === "overview";
+
+  // ── Derived: Overview graph (module nodes + cross-module edges) ────────────
+  const overviewGraph = useMemo(() => {
+    if (!graphData) return { moduleNodes: [], moduleEdges: [] };
+    return computeOverviewGraph(graphData.nodes, graphData.edges);
+  }, [graphData]);
+
+  // ── Derived: layer counts (from raw nodes inside current module or all) ────
   const layerCounts = useMemo((): Record<LayerFilter, number> => {
     const counts: Record<LayerFilter, number> = {
       all: 0, frontend: 0, backend: 0, testing: 0, deployment: 0, other: 0,
     };
     if (!graphData) return counts;
-    counts.all = graphData.nodes.length;
-    graphData.nodes.forEach((n) => {
+
+    const sourceNodes = isOverview
+      ? graphData.nodes
+      : drillIntoModule(currentLevel.moduleId!, graphData.nodes, graphData.edges).nodes;
+
+    counts.all = sourceNodes.length;
+    sourceNodes.forEach((n) => {
       const layer = classifyNodeLayer(n);
       counts[layer] = (counts[layer] ?? 0) + 1;
     });
     return counts;
-  }, [graphData]);
+  }, [graphData, isOverview, currentLevel]);
 
-  // ── Derive filtered nodes (actually filter them out to simplify layout) ──────────
-  const filteredNodes = useMemo(() => {
-    if (!graphData) return [];
-    if (activeLayer === "all") return graphData.nodes;
-    return graphData.nodes.filter((n) => {
-      const layer = classifyNodeLayer(n);
-      return layer === activeLayer;
-    });
-  }, [graphData, activeLayer]);
+  // ── Derived: nodes/edges to render in GraphView ────────────────────────────
+  const { visibleNodes, visibleEdges } = useMemo(() => {
+    if (!graphData) return { visibleNodes: [], visibleEdges: [] };
 
-  // ── Derive filtered edges (must match filtered nodes) ───────────────────────────
-  const filteredEdges = useMemo(() => {
-    if (!graphData) return [];
-    if (activeLayer === "all") return graphData.edges;
-    const validNodeIds = new Set(filteredNodes.map(n => n.id));
-    return graphData.edges.filter(e => validNodeIds.has(e.source) && validNodeIds.has(e.target));
-  }, [graphData, filteredNodes, activeLayer]);
+    if (isOverview) {
+      // Render synthetic module nodes
+      return {
+        visibleNodes: overviewGraph.moduleNodes,
+        visibleEdges: overviewGraph.moduleEdges,
+      };
+    }
 
-  // ── Derive connections for selected node ───────────────────────────────────
+    // Drill-down: get raw nodes/edges for this module
+    const { nodes: drillNodes, edges: drillEdges } = drillIntoModule(
+      currentLevel.moduleId!,
+      graphData.nodes,
+      graphData.edges
+    );
+
+    // Apply layer filter on top of drill-down
+    if (activeLayer === "all") {
+      return { visibleNodes: drillNodes, visibleEdges: drillEdges };
+    }
+
+    const filteredNodes = drillNodes.filter(
+      (n) => classifyNodeLayer(n) === activeLayer
+    );
+    const filteredIds = new Set(filteredNodes.map((n) => n.id));
+    const filteredEdges = drillEdges.filter(
+      (e) => filteredIds.has(e.source) && filteredIds.has(e.target)
+    );
+    return { visibleNodes: filteredNodes, visibleEdges: filteredEdges };
+  }, [graphData, isOverview, currentLevel, overviewGraph, activeLayer]);
+
+  // ── Derived: connections for NodeDetailPanel ───────────────────────────────
   const selectedConnections = useMemo(() => {
     if (!selectedNode || !graphData || !selectedNode.nodeId) return [];
     const nodeId = selectedNode.nodeId;
@@ -146,7 +197,28 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
     setActiveTag(null);
   };
 
+  // ── Navigation handlers ────────────────────────────────────────────────────
+
+  /** Called when user clicks a module node in the overview */
+  const handleModuleClick = (moduleNode: ModuleNode) => {
+    setNavStack([
+      { level: "overview" },
+      { level: "module", moduleId: moduleNode.id, label: moduleNode.label },
+    ]);
+    setSelectedNode(null);
+    setActiveLayer("all");
+  };
+
+  /** Called when user clicks a breadcrumb crumb */
+  const handleBreadcrumbNavigate = (index: number) => {
+    setNavStack((prev) => prev.slice(0, index + 1));
+    setSelectedNode(null);
+    setActiveLayer("all");
+  };
+
   const VISIBLE_LAYERS: LayerFilter[] = ["all", "frontend", "backend", "testing", "deployment"];
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div
@@ -205,38 +277,49 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
         </div>
       )}
 
-      {/* Main content */}
+      {/* ── Main content ──────────────────────────────────────────────────── */}
       {graphData && !loading && !error && graphData.nodes.length > 0 && (
         <>
-          {/* ── Top toolbar ───────────────────────────────────────────────── */}
-          <div className="absolute top-4 left-4 z-20 flex gap-3 flex-wrap">
+          {/* ── Top toolbar ─────────────────────────────────────────────── */}
+          <div className="absolute top-4 left-4 z-20 flex gap-3 flex-wrap items-center">
 
-            {/* Layer filter tabs */}
-            <div className="bg-[#0d0a08]/90 backdrop-blur-md border border-white/10 rounded-lg p-1 flex gap-1 shadow-lg">
-              {VISIBLE_LAYERS.map((layer) => {
-                const count = layerCounts[layer];
-                const isActive = activeLayer === layer;
-                return (
-                  <button
-                    key={layer}
-                    onClick={() => setActiveLayer(layer)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border
-                      ${isActive
-                        ? ACTIVE_LAYER_COLORS[layer]
-                        : "text-white/40 border-transparent hover:text-white/70"
-                      }`}
-                  >
-                    {LAYER_LABELS[layer]}
-                    {layer !== "all" && count > 0 && (
-                      <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full
-                        ${isActive ? "bg-white/20" : "bg-white/10"}`}>
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Overview label / back hint when in overview mode */}
+            {isOverview && (
+              <div className="bg-[#d4a24c]/10 border border-[#d4a24c]/30 backdrop-blur-md rounded-lg px-3 py-1.5 flex items-center gap-2 shadow-lg">
+                <span className="text-lg">🏗️</span>
+                <span className="text-[#d4a24c] text-xs font-semibold tracking-wide">Architecture Overview</span>
+                <span className="text-white/30 text-xs">· click a module to explore</span>
+              </div>
+            )}
+
+            {/* Layer filter tabs — only shown when drilled in */}
+            {!isOverview && (
+              <div className="bg-[#0d0a08]/90 backdrop-blur-md border border-white/10 rounded-lg p-1 flex gap-1 shadow-lg">
+                {VISIBLE_LAYERS.map((layer) => {
+                  const count = layerCounts[layer];
+                  const isActive = activeLayer === layer;
+                  return (
+                    <button
+                      key={layer}
+                      onClick={() => setActiveLayer(layer)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border
+                        ${isActive
+                          ? ACTIVE_LAYER_COLORS[layer]
+                          : "text-white/40 border-transparent hover:text-white/70"
+                        }`}
+                    >
+                      {LAYER_LABELS[layer]}
+                      {layer !== "all" && count > 0 && (
+                        <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full
+                          ${isActive ? "bg-white/20" : "bg-white/10"}`}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Guided Tour button */}
             {!tourActive && uniqueTags.length > 0 && (
@@ -249,16 +332,23 @@ export function CodeMapTab({ repoUrl }: CodeMapTabProps) {
             )}
           </div>
 
+          {/* ── Breadcrumb nav (hidden at overview level) ────────────────── */}
+          <BreadcrumbNav navStack={navStack} onNavigate={handleBreadcrumbNavigate} />
+
+          {/* ── Graph canvas ─────────────────────────────────────────────── */}
           <GraphView
-            initialNodes={filteredNodes}
-            initialEdges={filteredEdges}
+            initialNodes={visibleNodes}
+            initialEdges={visibleEdges}
             activeLayer={activeLayer}
             tourActiveTag={activeTag}
+            isOverview={isOverview}
+            onModuleClick={handleModuleClick}
             onNodeClick={(data) =>
               setSelectedNode({ ...data, repoUrl, nodeId: data.nodeId })
             }
           />
 
+          {/* ── Node detail panel (right side) ───────────────────────────── */}
           <NodeDetailPanel
             nodeData={selectedNode}
             connections={selectedConnections}

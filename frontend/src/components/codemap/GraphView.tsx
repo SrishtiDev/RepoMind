@@ -19,6 +19,7 @@ import "reactflow/dist/style.css";
 import dagre from "dagre";
 import { NodeData } from "./NodeDetailPanel";
 import { NodeLayer } from "./layerClassifier";
+import type { ModuleNode } from "./graphHierarchy";
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -67,6 +68,10 @@ const KIND_BADGE_COLOR: Record<string, string> = {
 // They must match so dagre reserves the right amount of space.
 const NODE_W = 180;
 const NODE_H = 56;
+
+// Module (overview) node dimensions — larger to be clearly clickable
+const MODULE_W = 220;
+const MODULE_H = 80;
 
 // ─── Custom Node Renderer ─────────────────────────────────────────────────────
 
@@ -172,9 +177,111 @@ const CodeNode = memo(({ data, selected }: NodeProps) => {
 });
 CodeNode.displayName = "CodeNode";
 
+// ─── Module Node Renderer (Overview level) ───────────────────────────────────
+
+/**
+ * ModuleNodeRenderer — displayed in the Overview graph.
+ * Larger card with folder icon, module label, and file-count badge.
+ * A subtle animated pulse border signals it's drillable.
+ */
+const ModuleNodeRenderer = memo(({ data, selected }: NodeProps) => {
+  const label: string = data.label ?? "Module";
+  const fileCount: number = data.fileCount ?? 0;
+  const nodeCount: number = data.nodeCount ?? 0;
+  const borderColor: string = data.borderColor ?? "#d4a24c";
+  const bgColor: string = data.bgColor ?? "#1a1511";
+
+  return (
+    <div
+      title={`Click to explore ${label}`}
+      style={{
+        width: MODULE_W,
+        minHeight: MODULE_H,
+        background: bgColor,
+        border: `1.5px solid ${selected ? "#fff" : borderColor}`,
+        borderRadius: 12,
+        boxShadow: selected
+          ? `0 0 0 2px ${borderColor}55, 0 0 20px ${borderColor}33`
+          : `0 2px 12px rgba(0,0,0,0.6), 0 0 0 1px ${borderColor}22`,
+        transition: "box-shadow 200ms ease, border-color 200ms ease",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        padding: "12px 14px",
+        cursor: "pointer",
+        userSelect: "none",
+      }}
+    >
+      <Handle type="source" position={Position.Right} style={{ background: borderColor, width: 7, height: 7, border: "none" }} />
+      <Handle type="target" position={Position.Left} style={{ background: borderColor, width: 7, height: 7, border: "none" }} />
+
+      {/* Top row: folder icon + module label */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 18, lineHeight: 1 }}>📁</span>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#f0f0f0",
+            fontFamily: "ui-monospace, 'Cascadia Code', monospace",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            flex: 1,
+          }}
+        >
+          {label}
+        </span>
+      </div>
+
+      {/* Bottom row: file count + total node count badges */}
+      <div style={{ display: "flex", gap: 6 }}>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: borderColor,
+            background: `${borderColor}20`,
+            border: `1px solid ${borderColor}44`,
+            borderRadius: 4,
+            padding: "2px 7px",
+          }}
+        >
+          {fileCount} {fileCount === 1 ? "file" : "files"}
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 500,
+            color: "#ffffff60",
+            background: "#ffffff0d",
+            border: "1px solid #ffffff15",
+            borderRadius: 4,
+            padding: "2px 7px",
+          }}
+        >
+          {nodeCount} nodes
+        </span>
+        <span
+          style={{
+            fontSize: 9,
+            color: "#ffffff40",
+            alignSelf: "center",
+            marginLeft: "auto",
+            letterSpacing: "0.05em",
+          }}
+        >
+          click to explore →
+        </span>
+      </div>
+    </div>
+  );
+});
+ModuleNodeRenderer.displayName = "ModuleNodeRenderer";
+
 // Register once, outside component so reference is stable across re-renders.
 // React Flow v11 requires nodeTypes to be stable (not re-created per render).
-const NODE_TYPES = { codeNode: CodeNode };
+const NODE_TYPES = { codeNode: CodeNode, moduleNode: ModuleNodeRenderer };
 
 // ─── Dagre Layout ─────────────────────────────────────────────────────────────
 
@@ -183,14 +290,19 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
   dagreGraph.setDefaultEdgeLabel(() => ({}));
   dagreGraph.setGraph({
     rankdir: "LR",
-    nodesep: 40,   // vertical gap between nodes in the same rank (was default ~10)
-    ranksep: 80,   // horizontal gap between ranks (was default ~30)
-    marginx: 20,
-    marginy: 20,
+    nodesep: 50,   // vertical gap between nodes in the same rank
+    ranksep: 100,  // horizontal gap between ranks
+    marginx: 30,
+    marginy: 30,
   });
 
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: NODE_W, height: NODE_H });
+    // Module nodes are larger — inform dagre so it allocates more space
+    const isModule = node.type === "moduleNode";
+    dagreGraph.setNode(node.id, {
+      width: isModule ? MODULE_W : NODE_W,
+      height: isModule ? MODULE_H : NODE_H,
+    });
   });
 
   edges.forEach((edge) => {
@@ -203,6 +315,9 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
     dagre.layout(dagreGraph);
 
     const newNodes = nodes.map((node) => {
+      const isModule = node.type === "moduleNode";
+      const w = isModule ? MODULE_W : NODE_W;
+      const h = isModule ? MODULE_H : NODE_H;
       const pos = dagreGraph.node(node.id);
       if (!pos) throw new Error(`Dagre missing node: ${node.id}`);
       return {
@@ -210,8 +325,8 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
         targetPosition: Position.Left,
         sourcePosition: Position.Right,
         position: {
-          x: pos.x - NODE_W / 2,
-          y: pos.y - NODE_H / 2,
+          x: pos.x - w / 2,
+          y: pos.y - h / 2,
         },
       };
     });
@@ -223,7 +338,7 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
     return {
       nodes: nodes.map((node, i) => ({
         ...node,
-        position: { x: (i % cols) * (NODE_W + 40), y: Math.floor(i / cols) * (NODE_H + 30) },
+        position: { x: (i % cols) * (MODULE_W + 50), y: Math.floor(i / cols) * (MODULE_H + 40) },
       })),
       edges,
     };
@@ -237,7 +352,12 @@ interface Props {
   initialEdges: any[];
   activeLayer: NodeLayer | "all";
   tourActiveTag: string | null;
+  /** Called when user clicks a leaf node (file / function / class) */
   onNodeClick: (data: NodeData) => void;
+  /** Called when user clicks a module node in the overview level */
+  onModuleClick?: (moduleNode: ModuleNode) => void;
+  /** When true, the canvas is the overview level (module nodes) */
+  isOverview?: boolean;
 }
 
 // ─── GraphView ────────────────────────────────────────────────────────────────
@@ -255,13 +375,39 @@ export function GraphView({
   activeLayer,
   tourActiveTag,
   onNodeClick,
+  onModuleClick,
+  isOverview = false,
 }: Props) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
   useEffect(() => {
-    // ── 1. Transform backend nodes → codeNode shape ────────────────────────
+    // ── 1. Transform nodes → codeNode or moduleNode shape ─────────────────
     const formattedNodes: Node[] = initialNodes.map((n) => {
+      // ── Overview / module nodes ──────────────────────────────────────────
+      if (isOverview && n.type === "module") {
+        return {
+          id: n.id,
+          type: "moduleNode",
+          position: { x: 0, y: 0 },
+          data: {
+            label: n.label,
+            fileCount: n.fileCount,
+            nodeCount: n.nodeCount,
+            tags: n.tags ?? [],
+            childIds: n.childIds ?? [],
+            // Will be styled in styledNodes below
+            borderColor: "#d4a24c",
+            bgColor: "#1a1511",
+            opacity: 1,
+            // Pass through so onNodeClick handlers can inspect it
+            isModule: true,
+            moduleId: n.id,
+          },
+        };
+      }
+
+      // ── Leaf nodes (file / function / class / external) ──────────────────
       const kind: string = n.type ?? "file";
       const rawLabel: string = n.data?.label ?? n.id;
 
@@ -429,13 +575,27 @@ export function GraphView({
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => {
           setHoveredNode(node.id);
-          onNodeClick(node.data as NodeData);
+          // Route to the correct handler based on node type
+          if (node.type === "moduleNode" && onModuleClick) {
+            // Build a ModuleNode-shaped object from the stored data
+            onModuleClick({
+              id: node.id,
+              type: "module",
+              label: node.data.label,
+              fileCount: node.data.fileCount,
+              nodeCount: node.data.nodeCount,
+              tags: node.data.tags ?? [],
+              childIds: node.data.childIds ?? [],
+            });
+          } else {
+            onNodeClick(node.data as NodeData);
+          }
         }}
         onNodeMouseEnter={(_, node) => setHoveredNode(node.id)}
         onNodeMouseLeave={() => setHoveredNode(null)}
         connectionLineType={ConnectionLineType.SmoothStep}
         fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 0.85 }}
+        fitViewOptions={{ padding: isOverview ? 0.3 : 0.2, maxZoom: isOverview ? 0.7 : 0.85 }}
         minZoom={0.05}
         maxZoom={2}
         className="touch-none"

@@ -90,29 +90,46 @@ export async function retrieveNode(
     // Return special state that answer node will recognise
     return {
       retrievedChunks: [],
-      isSufficient: true,      // skip assess/retry loop — we have nothing to search
+      retrievalConfidence: 0,   // no results → confidence is 0
+      isSufficient: true,       // skip assess/retry loop — we have nothing to search
       answer: "This repository hasn't been indexed yet (or indexing is still in progress). Please wait a moment and try again.",
       sources: [],
     };
   }
 
+  // Only map results that have a payload (guard against Qdrant edge cases).
+  const validResults = searchResults.filter((r: any) => r.payload);
+
   // Map raw Qdrant results into typed Chunk objects.
-  const retrievedChunks: Chunk[] = searchResults
-    .filter((r: any) => r.payload) // guard against missing payloads
-    .map((r: any) => {
-      const p = r.payload as Record<string, unknown>;
-      return {
-        content: String(p.content ?? ""),
-        filename: String(p.filename ?? "unknown"),
-        filepath: String(p.filepath ?? "unknown"),
-        chunkIndex: Number(p.chunkIndex ?? 0),
-        repoUrl: String(p.repoUrl ?? "unknown"),
-      };
-    });
+  const retrievedChunks: Chunk[] = validResults.map((r: any) => {
+    const p = r.payload as Record<string, unknown>;
+    return {
+      content:    String(p.content    ?? ""),
+      filename:   String(p.filename   ?? "unknown"),
+      filepath:   String(p.filepath   ?? "unknown"),
+      chunkIndex: Number(p.chunkIndex ?? 0),
+      repoUrl:    String(p.repoUrl    ?? "unknown"),
+    };
+  });
+
+  // Compute average cosine similarity of the returned chunks.
+  // Qdrant normalises cosine distance to a similarity score in [0, 1]:
+  //   1.0 = perfectly identical vectors, 0.0 = completely orthogonal.
+  // This average becomes `retrievalConfidence` and drives the ASSESS-skip
+  // routing decision in graph.ts.
+  const scores = validResults.map((r: any) => r.score as number);
+  const retrievalConfidence =
+    scores.length > 0
+      ? scores.reduce((sum: number, s: number) => sum + s, 0) / scores.length
+      : 0;
 
   console.log(
-    `[Retrieve] Query: "${queryText.slice(0, 60)}..." → ${retrievedChunks.length} chunks returned (repo-scoped: ${repoUrl}).`
+    `[Retrieve] Query: "${queryText.slice(0, 60)}..." → ${
+      retrievedChunks.length
+    } chunks returned (repo-scoped: ${repoUrl}). Avg confidence: ${
+      retrievalConfidence.toFixed(3)
+    }`
   );
 
-  return { retrievedChunks };
+  return { retrievedChunks, retrievalConfidence };
 }

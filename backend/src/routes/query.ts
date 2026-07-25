@@ -46,6 +46,7 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
       question: question.trim(),
       repoUrl: repoUrl.trim(),
       retrievedChunks: [],
+      retrievalConfidence: 0,  // set by RETRIEVE node on first pass
       isSufficient: false,
       retryCount: 0,
     };

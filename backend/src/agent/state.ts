@@ -34,15 +34,20 @@ export interface Source {
  *  2. `refinedQuery` is optionally set by assess.ts when the LLM suggests a
  *     better search query — retrieve.ts prefers this over `question`.
  *  3. `retrievedChunks` is overwritten on every retrieve pass.
- *  4. `isSufficient` gates the conditional edge in graph.ts.
- *  5. `retryCount` is incremented by assess.ts; capped at MAX_RETRY_COUNT.
- *  6. `answer` and `sources` are populated by answer.ts at the terminal node.
+ *  4. `retrievalConfidence` is set by the retrieve node — the average cosine
+ *     similarity (0–1) of the top-k returned chunks. Used in graph.ts to
+ *     skip the LLM-based ASSESS node when retrieval quality is already high.
+ *  5. `isSufficient` gates the conditional edge in graph.ts.
+ *  6. `retryCount` is incremented by assess.ts; capped at MAX_RETRY_COUNT.
+ *  7. `answer` and `sources` are populated by answer.ts at the terminal node.
  */
 export interface AgentState {
   question: string;
   repoUrl?: string;
   refinedQuery?: string;
   retrievedChunks: Chunk[];
+  /** Average cosine similarity (0–1) of the top-k chunks from the last RETRIEVE pass. */
+  retrievalConfidence: number;
   matchedTags?: string[];
   graphContext?: GraphContextNode[];
   mergedContext?: MergedContext[];

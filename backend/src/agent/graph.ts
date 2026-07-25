@@ -7,6 +7,18 @@ import { retrieveFromGraph, GraphContextNode } from "./nodes/graphRetrieve";
 import { mergeContexts, MergedContext } from "./nodes/mergeContext";
 import { AgentState, Chunk, Source } from "./state";
 
+// ─── Routing Threshold ───────────────────────────────────────────────────────
+//
+// When the average cosine similarity of the top-k retrieved chunks is at or
+// above this value, the ASSESS node (which makes an extra LLM call) is skipped
+// entirely and we route straight to ANSWER.
+// Cosine similarity range: 0.0 (orthogonal) → 1.0 (identical).
+// For gemini-embedding-2 on code, scores typically fall between 0.60–0.90.
+// Tune this constant to trade off latency vs. answer quality gate:
+//   higher → more questions go through ASSESS (safer, slower)
+//   lower  → more questions skip ASSESS (faster, fewer safety checks)
+const ASSESS_SKIP_THRESHOLD = 0.75;
+
 // ─── State Annotation ────────────────────────────────────────────────────────
 //
 // LangGraph requires an Annotation object to describe state shape and reducer
@@ -29,6 +41,11 @@ const GraphAnnotation = Annotation.Root({
   retrievedChunks: Annotation<Chunk[]>({
     reducer: (_, next) => next,
     default: () => [],
+  }),
+  /** Average cosine similarity (0–1) of top-k chunks from the last RETRIEVE pass. */
+  retrievalConfidence: Annotation<number>({
+    reducer: (_, next) => next,
+    default: () => 0,
   }),
   matchedTags: Annotation<string[] | undefined>({
     reducer: (_, next) => next,
@@ -128,8 +145,23 @@ const workflow = new StateGraph(GraphAnnotation)
   // Fan in: both retrieval paths must complete before merge
   .addEdge([RETRIEVE, GRAPH_RETRIEVE], MERGE_CONTEXT)
 
-  // Proceed to assess
-  .addEdge(MERGE_CONTEXT, ASSESS)
+  // Proceed to assess — but only when retrieval confidence is low.
+  // If the average cosine similarity of the retrieved chunks already meets
+  // ASSESS_SKIP_THRESHOLD, we bypass the LLM-based sufficiency check entirely
+  // and route straight to ANSWER (saves ~1-2s per query).
+  .addConditionalEdges(MERGE_CONTEXT, (state: AgentState) => {
+    const conf = state.retrievalConfidence ?? 0;
+    if (conf >= ASSESS_SKIP_THRESHOLD) {
+      console.log(
+        `[Graph] retrievalConfidence=${conf.toFixed(3)} >= ${ASSESS_SKIP_THRESHOLD} → SKIP_ASSESS, routing direct to ANSWER`
+      );
+      return ANSWER;
+    }
+    console.log(
+      `[Graph] retrievalConfidence=${conf.toFixed(3)} < ${ASSESS_SKIP_THRESHOLD} → RUN_ASSESS`
+    );
+    return ASSESS;
+  })
 
   // Conditional edge: assess → retry (both paths) OR assess → answer (done)
   .addConditionalEdges(ASSESS, (state: AgentState) => {

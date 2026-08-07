@@ -30,7 +30,7 @@ async function invokeWithRetry(messages: { role: string; content: string }[], no
       throw new Error(`Agent Router API error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     return data.choices[0].message.content;
   } catch (err: any) {
     throw err;

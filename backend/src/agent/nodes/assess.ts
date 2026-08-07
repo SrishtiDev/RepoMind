@@ -1,37 +1,38 @@
-import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { AgentState, MAX_RETRY_COUNT } from "../state";
-
-// ─── LLM Factory ─────────────────────────────────────────────────────────────
-
-function getLLM(): ChatOpenAI {
-  if (!process.env.AGENT_ROUTER_API_KEY) {
-    throw new Error(
-      "[Assess] AGENT_ROUTER_API_KEY is not set. Cannot initialise Agent Router."
-    );
-  }
-  return new ChatOpenAI({
-    apiKey: process.env.AGENT_ROUTER_API_KEY,
-    model: "gpt-5.6-sol",
-    temperature: 0, // deterministic YES/NO judgement
-    maxRetries: 0, // Custom retry logic handles this
-    configuration: {
-      baseURL: process.env.AGENT_ROUTER_BASE_URL // Optional: omit if they use default proxy or OpenAI sdk handles it
-    }
-  });
-}
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function invokeWithRetry(llm: ChatOpenAI, messages: any[], nodeName: string) {
+async function invokeWithRetry(messages: { role: string; content: string }[], nodeName: string): Promise<string> {
+  if (!process.env.AGENTROUTER_API_KEY) {
+    throw new Error(`[${nodeName}] AGENTROUTER_API_KEY is not set. Cannot initialise Agent Router.`);
+  }
+
   try {
-    return await llm.invoke(messages);
-  } catch (err: any) {
-    if (err?.status === 429 || err?.message?.includes("429")) {
-      console.warn(`[${nodeName}] Agent Router 429 Rate Limit hit. Retrying in 2 seconds...`);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      return await llm.invoke(messages);
+    const response = await fetch("https://co.agentrouter.org/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.AGENTROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-5.6-sol",
+        temperature: 0,
+        messages: messages,
+      }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        console.warn(`[${nodeName}] Agent Router 429 Rate Limit hit. Retrying in 2 seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return await invokeWithRetry(messages, nodeName);
+      }
+      throw new Error(`Agent Router API error: ${response.statusText}`);
     }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (err: any) {
     throw err;
   }
 }
@@ -52,8 +53,6 @@ async function invokeWithRetry(llm: ChatOpenAI, messages: any[], nodeName: strin
 export async function assessNode(
   state: AgentState
 ): Promise<Partial<AgentState>> {
-  const llm = getLLM();
-
   // Build a compact context string from the retrieved chunks.
   const contextText = state.retrievedChunks
     .map(
@@ -79,13 +78,11 @@ Do not add anything else.`;
 
   let judgement: string;
   try {
-    const response = await invokeWithRetry(llm, [
-      new SystemMessage(
-        "You are a strict technical relevance judge. Be concise."
-      ),
-      new HumanMessage(sufficiencyPrompt),
+    const responseText = await invokeWithRetry([
+      { role: "system", content: "You are a strict technical relevance judge. Be concise." },
+      { role: "user", content: sufficiencyPrompt },
     ], "Assess");
-    judgement = String(response.content).trim().toUpperCase();
+    judgement = String(responseText).trim().toUpperCase();
   } catch (err: any) {
     throw new Error(
       `[Assess] Agent Router sufficiency check failed: ${err?.message ?? err}`
@@ -123,10 +120,10 @@ Suggest a single, improved search query (no more than 15 words) that is more lik
 
   let refinedQuery: string;
   try {
-    const refineResponse = await invokeWithRetry(llm, [
-      new HumanMessage(refinePrompt),
+    const responseText = await invokeWithRetry([
+      { role: "user", content: refinePrompt },
     ], "Assess");
-    refinedQuery = String(refineResponse.content).trim();
+    refinedQuery = String(responseText).trim();
   } catch (err: any) {
     throw new Error(
       `[Assess] Agent Router query refinement failed: ${err?.message ?? err}`

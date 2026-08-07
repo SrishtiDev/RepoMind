@@ -1,37 +1,38 @@
-import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { AgentState, Source } from "../state";
-
-// ─── LLM Factory ─────────────────────────────────────────────────────────────
-
-function getLLM(): ChatOpenAI {
-  if (!process.env.AGENT_ROUTER_API_KEY) {
-    throw new Error(
-      "[Answer] AGENT_ROUTER_API_KEY is not set. Cannot initialise Agent Router."
-    );
-  }
-  return new ChatOpenAI({
-    apiKey: process.env.AGENT_ROUTER_API_KEY,
-    model: "gpt-5.6-sol",
-    temperature: 0.2, // slight creativity for natural prose, still grounded
-    maxRetries: 0, // Custom retry logic handles this
-    configuration: {
-      baseURL: process.env.AGENT_ROUTER_BASE_URL // Optional
-    }
-  });
-}
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function invokeWithRetry(llm: ChatOpenAI, messages: any[], nodeName: string) {
+async function invokeWithRetry(messages: { role: string; content: string }[], nodeName: string): Promise<string> {
+  if (!process.env.AGENTROUTER_API_KEY) {
+    throw new Error(`[${nodeName}] AGENTROUTER_API_KEY is not set. Cannot initialise Agent Router.`);
+  }
+
   try {
-    return await llm.invoke(messages);
-  } catch (err: any) {
-    if (err?.status === 429 || err?.message?.includes("429")) {
-      console.warn(`[${nodeName}] Agent Router 429 Rate Limit hit. Retrying in 2 seconds...`);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      return await llm.invoke(messages);
+    const response = await fetch("https://co.agentrouter.org/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.AGENTROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-5.6-sol",
+        temperature: 0.2,
+        messages: messages,
+      }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        console.warn(`[${nodeName}] Agent Router 429 Rate Limit hit. Retrying in 2 seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return await invokeWithRetry(messages, nodeName);
+      }
+      throw new Error(`Agent Router API error: ${response.statusText}`);
     }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (err: any) {
     throw err;
   }
 }
@@ -58,8 +59,6 @@ export async function answerNode(
       sources: [],
     };
   }
-
-  const llm = getLLM();
 
   // Build a labelled context block so the model can construct accurate citations.
   const contextBlock = state.retrievedChunks
@@ -89,13 +88,11 @@ QUESTION: ${state.question}`;
 
   let rawAnswer: string;
   try {
-    const response = await invokeWithRetry(llm, [
-      new SystemMessage(
-        "You are a grounded code assistant. Never hallucinate. Always cite sources."
-      ),
-      new HumanMessage(answerPrompt),
+    const responseText = await invokeWithRetry([
+      { role: "system", content: "You are a grounded code assistant. Never hallucinate. Always cite sources." },
+      { role: "user", content: answerPrompt },
     ], "Answer");
-    rawAnswer = String(response.content).trim();
+    rawAnswer = String(responseText).trim();
   } catch (err: any) {
     throw new Error(
       `[Answer] Agent Router generation failed: ${err?.message ?? err}`

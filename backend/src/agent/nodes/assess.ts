@@ -3,19 +3,19 @@ import { AgentState, MAX_RETRY_COUNT } from "../state";
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 async function invokeWithRetry(messages: { role: string; content: string }[], nodeName: string): Promise<string> {
-  if (!process.env.AGENTROUTER_API_KEY) {
-    throw new Error(`[${nodeName}] AGENTROUTER_API_KEY is not set. Cannot initialise Agent Router.`);
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error(`[${nodeName}] GROQ_API_KEY is not set.`);
   }
 
   try {
-    const response = await fetch("https://co.agentrouter.org/v1/chat/completions", {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.AGENTROUTER_API_KEY}`,
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-5.6-sol",
+        model: "llama-3.3-70b-versatile",
         temperature: 0,
         messages: messages,
       }),
@@ -23,11 +23,12 @@ async function invokeWithRetry(messages: { role: string; content: string }[], no
 
     if (!response.ok) {
       if (response.status === 429) {
-        console.warn(`[${nodeName}] Agent Router 429 Rate Limit hit. Retrying in 2 seconds...`);
+        console.warn(`[${nodeName}] Groq 429 Rate Limit hit. Retrying in 2 seconds...`);
         await new Promise((resolve) => setTimeout(resolve, 2000));
         return await invokeWithRetry(messages, nodeName);
       }
-      throw new Error(`Agent Router API error: ${response.statusText}`);
+      const errBody = await response.text();
+      throw new Error(`Groq API error ${response.status}: ${errBody}`);
     }
 
     const data = (await response.json()) as any;

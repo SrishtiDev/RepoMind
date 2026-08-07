@@ -1,31 +1,34 @@
-import { ChatGroq } from "@langchain/groq";
+import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { AgentState, Source } from "../state";
 
 // ─── LLM Factory ─────────────────────────────────────────────────────────────
 
-function getLLM(): ChatGroq {
-  if (!process.env.GROQ_API_KEY) {
+function getLLM(): ChatOpenAI {
+  if (!process.env.AGENT_ROUTER_API_KEY) {
     throw new Error(
-      "[Answer] GROQ_API_KEY is not set. Cannot initialise Groq."
+      "[Answer] AGENT_ROUTER_API_KEY is not set. Cannot initialise Agent Router."
     );
   }
-  return new ChatGroq({
-    apiKey: process.env.GROQ_API_KEY,
-    model: "openai/gpt-oss-120b",
+  return new ChatOpenAI({
+    apiKey: process.env.AGENT_ROUTER_API_KEY,
+    model: "gpt-5.6-sol",
     temperature: 0.2, // slight creativity for natural prose, still grounded
     maxRetries: 0, // Custom retry logic handles this
+    configuration: {
+      baseURL: process.env.AGENT_ROUTER_BASE_URL // Optional
+    }
   });
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function invokeWithRetry(llm: ChatGroq, messages: any[], nodeName: string) {
+async function invokeWithRetry(llm: ChatOpenAI, messages: any[], nodeName: string) {
   try {
     return await llm.invoke(messages);
   } catch (err: any) {
     if (err?.status === 429 || err?.message?.includes("429")) {
-      console.warn(`[${nodeName}] Groq 429 Rate Limit hit. Retrying in 2 seconds...`);
+      console.warn(`[${nodeName}] Agent Router 429 Rate Limit hit. Retrying in 2 seconds...`);
       await new Promise((resolve) => setTimeout(resolve, 2000));
       return await llm.invoke(messages);
     }
@@ -95,7 +98,7 @@ QUESTION: ${state.question}`;
     rawAnswer = String(response.content).trim();
   } catch (err: any) {
     throw new Error(
-      `[Answer] Groq generation failed: ${err?.message ?? err}`
+      `[Answer] Agent Router generation failed: ${err?.message ?? err}`
     );
   }
 

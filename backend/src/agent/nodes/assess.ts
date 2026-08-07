@@ -1,31 +1,34 @@
-import { ChatGroq } from "@langchain/groq";
+import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { AgentState, MAX_RETRY_COUNT } from "../state";
 
 // ─── LLM Factory ─────────────────────────────────────────────────────────────
 
-function getLLM(): ChatGroq {
-  if (!process.env.GROQ_API_KEY) {
+function getLLM(): ChatOpenAI {
+  if (!process.env.AGENT_ROUTER_API_KEY) {
     throw new Error(
-      "[Assess] GROQ_API_KEY is not set. Cannot initialise Groq."
+      "[Assess] AGENT_ROUTER_API_KEY is not set. Cannot initialise Agent Router."
     );
   }
-  return new ChatGroq({
-    apiKey: process.env.GROQ_API_KEY,
-    model: "openai/gpt-oss-20b",
+  return new ChatOpenAI({
+    apiKey: process.env.AGENT_ROUTER_API_KEY,
+    model: "gpt-5.6-sol",
     temperature: 0, // deterministic YES/NO judgement
     maxRetries: 0, // Custom retry logic handles this
+    configuration: {
+      baseURL: process.env.AGENT_ROUTER_BASE_URL // Optional: omit if they use default proxy or OpenAI sdk handles it
+    }
   });
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function invokeWithRetry(llm: ChatGroq, messages: any[], nodeName: string) {
+async function invokeWithRetry(llm: ChatOpenAI, messages: any[], nodeName: string) {
   try {
     return await llm.invoke(messages);
   } catch (err: any) {
     if (err?.status === 429 || err?.message?.includes("429")) {
-      console.warn(`[${nodeName}] Groq 429 Rate Limit hit. Retrying in 2 seconds...`);
+      console.warn(`[${nodeName}] Agent Router 429 Rate Limit hit. Retrying in 2 seconds...`);
       await new Promise((resolve) => setTimeout(resolve, 2000));
       return await llm.invoke(messages);
     }
@@ -85,7 +88,7 @@ Do not add anything else.`;
     judgement = String(response.content).trim().toUpperCase();
   } catch (err: any) {
     throw new Error(
-      `[Assess] Groq sufficiency check failed: ${err?.message ?? err}`
+      `[Assess] Agent Router sufficiency check failed: ${err?.message ?? err}`
     );
   }
 
@@ -126,7 +129,7 @@ Suggest a single, improved search query (no more than 15 words) that is more lik
     refinedQuery = String(refineResponse.content).trim();
   } catch (err: any) {
     throw new Error(
-      `[Assess] Groq query refinement failed: ${err?.message ?? err}`
+      `[Assess] Agent Router query refinement failed: ${err?.message ?? err}`
     );
   }
 
